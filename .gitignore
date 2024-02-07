@@ -1,0 +1,7 @@
+.vscode
+build
+component.mk
+Kconfig.projbuild
+sdkconfig
+sdkconfig.defaults
+sdkconfig.old
