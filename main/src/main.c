@@ -6,7 +6,7 @@ void app_main(void){
 
 	init_encoder();
 
-	createTask();
+	FreeRTOS_Init();
 
 }
 
@@ -77,9 +77,15 @@ esp_err_t init_encoder(){
 }
 
 /**
- * @brief Create the tasks.
+ * @brief Create the tasks and queue.
  */
-void createTask(){
+void FreeRTOS_Init(){
+
+	IMUQueue = xQueueCreate(10, sizeof(float[6]));
+	if(IMUQueue == NULL){ // Check if queue creation failed
+		printf("Error xQueueCreate function\n");
+	}
+
 	xTaskCreate(TaskEncoder,
         "Task encoder",
         CONFIG_MICRO_ROS_APP_STACK,
@@ -87,8 +93,22 @@ void createTask(){
         CONFIG_MICRO_ROS_APP_TASK_PRIO,
         NULL);	
 	
-	xTaskCreate(TaskIMU,
-		"Task IMU",
+	xTaskCreate(TaskReadDataIMU,
+		"Task to read data IMU",
+		1024,
+		NULL,
+		tskIDLE_PRIORITY+1,
+		NULL);
+
+	xTaskCreate(TaskPublishDataIMU,
+		"Task to publish data IMU",
+		CONFIG_MICRO_ROS_APP_STACK,
+		NULL,
+		CONFIG_MICRO_ROS_APP_TASK_PRIO,
+		NULL);
+
+	xTaskCreate(TaskPWM,
+		"Task PWM",
 		CONFIG_MICRO_ROS_APP_STACK,
 		NULL,
 		CONFIG_MICRO_ROS_APP_TASK_PRIO,
@@ -119,46 +139,73 @@ void TaskEncoder(void *argument){
 }
 
 /**
- * @brief Task that gets data from MPU6050 and publishes it in the topic.
- * @param argument 
+ * @brief Task that reads the accelerometer and gyroscope data from the MPU6050 and saves it in a float array
+ * @param argument Pointer to the task arguments (not used)
  */
-void TaskIMU(void *argument){
+void TaskReadDataIMU(void *argument){
 	esp_err_t ret;
-    uint8_t mpu6050_deviceid;
+	float values[6];
+	uint8_t mpu6050_deviceid;
     mpu6050_acce_value_t acce;
     mpu6050_gyro_value_t gyro;
-
-	sensor_msgs__msg__Imu *dataIMU = sensor_msgs__msg__Imu__create();
 
     i2c_sensor_mpu6050_init();
 
     ret = mpu6050_get_deviceid(mpu6050, &mpu6050_deviceid);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
-    
+	
 	while(1){
 		ret = mpu6050_get_acce(mpu6050, &acce);
 		TEST_ASSERT_EQUAL(ESP_OK, ret);
-		
-		dataIMU->linear_acceleration.x = convertGToMS2(acce.acce_x);
-		dataIMU->linear_acceleration.y = convertGToMS2(acce.acce_y);
-		dataIMU->linear_acceleration.z = convertGToMS2(acce.acce_z);
+
+		values[0] = acce.acce_x;
+		values[1] = acce.acce_y;
+		values[2] = acce.acce_z;
 
 		ret = mpu6050_get_gyro(mpu6050, &gyro);
     	TEST_ASSERT_EQUAL(ESP_OK, ret);
-    	
-		dataIMU->angular_velocity.x = convertDegreesToRadians(gyro.gyro_x);
-		dataIMU->angular_velocity.y = convertDegreesToRadians(gyro.gyro_y);
-		dataIMU->angular_velocity.z = convertDegreesToRadians(gyro.gyro_z);
+		
+		values[3] = gyro.gyro_x;
+		values[4] = gyro.gyro_y;
+		values[5] = gyro.gyro_z;
 
-		RCSOFTCHECK(rcl_publish(&publisher_IMU, dataIMU, NULL));
-		printf("Datos IMU publicados.\n");
+    	if (xQueueSend(IMUQueue, &values, portMAX_DELAY) != pdPASS) {
+        	printf("ERROR: full queue.\n");
+    	}
 
 		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
+}
 
-    mpu6050_delete(mpu6050);
-    ret = i2c_driver_delete(I2C_NUM_0);
-    TEST_ASSERT_EQUAL(ESP_OK, ret);
+/**
+ * @brief Task that receives the IMU data from the queue, converts it to a IMU msg 
+ * and publishes it to a topic using micro-ROS
+ * @param argument Pointer to the task arguments (not used)
+ */
+void TaskPublishDataIMU(void *argument){
+
+	float values[6];
+	sensor_msgs__msg__Imu *dataIMU = sensor_msgs__msg__Imu__create();
+    
+	while(1){
+
+
+    if(xQueueReceive(IMUQueue, values, portMAX_DELAY) == pdTRUE){ //Get the data from the queue
+		dataIMU->linear_acceleration.x = convertGToMS2(values[0]);
+		dataIMU->linear_acceleration.y = convertGToMS2(values[1]);
+		dataIMU->linear_acceleration.z = convertGToMS2(values[2]);
+
+		dataIMU->angular_velocity.x = convertDegreesToRadians(values[3]);
+		dataIMU->angular_velocity.y = convertDegreesToRadians(values[4]);
+		dataIMU->angular_velocity.z = convertDegreesToRadians(values[5]);
+
+		RCSOFTCHECK(rcl_publish(&publisher_IMU, dataIMU, NULL));
+		printf("Datos IMU publicados.\n");
+	}
+
+
+		vTaskDelay(pdMS_TO_TICKS(1000));
+	}
 }
 
 /**
@@ -197,3 +244,109 @@ float convertDegreesToRadians(float value) {
   // 1° = pi/180 rad
     return value * M_PI /180;
 }
+
+/**
+ * @brief Configure PWM for motor driver L298 (two motors)
+ * 
+ */
+void PWM_config(){
+	
+	// MOTOR 1
+	// gpio initialization
+	mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, 16); //IN1
+	mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, 17); //IN2
+
+	// pwm config
+	mcpwm_config_t pwm_config = {
+		.frequency = 1000,
+		.cmpr_a = 0,
+		.cmpr_b = 0,
+		.duty_mode = MCPWM_DUTY_MODE_0,
+		.counter_mode = MCPWM_UP_COUNTER
+	};
+
+	mcpwm_init(MCPWM_UNIT_0,MCPWM_TIMER_0, &pwm_config);
+
+	// MOTOR 2
+	mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, 4); // IN3
+	mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1B, 5); // IN4
+
+	mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config);
+}
+
+/**
+ * @brief Make the motor rotate forward.
+ * 
+ * @param mcpwm_num 
+ * @param timer_num 
+ * @param duty_cycle 
+ * @param gen_low 
+ * @param gen_pwm 
+ */
+void motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm){
+	mcpwm_set_signal_low(mcpwm_num, timer_num, gen_low);
+    mcpwm_set_duty(mcpwm_num, timer_num, gen_pwm, duty_cycle);
+    mcpwm_set_duty_type(mcpwm_num, timer_num, gen_pwm, MCPWM_DUTY_MODE_0);	
+}
+
+/**
+ * @brief Make the motor rotate backward.
+ * 
+ * @param mcpwm_num 
+ * @param timer_num 
+ * @param duty_cycle 
+ * @param gen_low 
+ * @param gen_pwm 
+ */
+void motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm){
+	mcpwm_set_signal_low(mcpwm_num, timer_num, gen_low);
+    mcpwm_set_duty(mcpwm_num, timer_num, gen_pwm, duty_cycle);
+    mcpwm_set_duty_type(mcpwm_num, timer_num, gen_pwm, MCPWM_DUTY_MODE_0);
+}
+
+/**
+ * @brief Make the motor stop.
+ * 
+ * @param mcpwm_num 
+ * @param timer_num 
+ * @param gen_in1 
+ * @param gen_in2 
+ */
+void motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, mcpwm_generator_t gen_in1, mcpwm_generator_t gen_in2){
+    mcpwm_set_signal_low(mcpwm_num, timer_num, gen_in1);
+    mcpwm_set_signal_low(mcpwm_num, timer_num, gen_in2);
+}
+
+/**
+ * @brief Task that handler the pwm of motors. 
+ * 
+ * @param argument 
+ */
+void TaskPWM(void *argument){
+
+	PWM_config();
+
+	while(1){
+
+		// Giro en un sentido
+		printf("Sentido 1\n");
+		motor_forward(MCPWM_UNIT_0, MCPWM_TIMER_0, 50, MCPWM_OPR_B, MCPWM_OPR_A);
+		motor_forward(MCPWM_UNIT_0, MCPWM_TIMER_1, 20, MCPWM_OPR_B, MCPWM_OPR_A);
+		vTaskDelay(pdMS_TO_TICKS(5000));
+
+		// Giro en otro sentido
+		printf("Sentido 2\n");
+		motor_backward(MCPWM_UNIT_0, MCPWM_TIMER_0, 50, MCPWM_OPR_A, MCPWM_OPR_B);
+		motor_backward(MCPWM_UNIT_0, MCPWM_TIMER_1, 20, MCPWM_OPR_A, MCPWM_OPR_B);
+		vTaskDelay(pdMS_TO_TICKS(5000));
+
+		// Stop
+		//printf("Sentido 3\n");
+		//motor_stop(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_OPR_B);
+		//motor_stop(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_OPR_B);
+		vTaskDelay(pdMS_TO_TICKS(5000));
+	}
+}
+
+
+
