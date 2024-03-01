@@ -41,13 +41,13 @@ void init_microROS(){
 		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
 		"encoder"));
 
-	RCCHECK(rclc_node_init_default(&node_IMU, "IMU_node", "", &support));
+	/*RCCHECK(rclc_node_init_default(&node_IMU, "IMU_node", "", &support));
 
 	RCCHECK(rclc_publisher_init_default(
 		&publisher_IMU,
 		&node_IMU,
 		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-		"IMU"));
+		"IMU"));*/
 
 	RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
 	
@@ -81,10 +81,10 @@ esp_err_t init_encoder(){
  */
 void FreeRTOS_Init(){
 
-	IMUQueue = xQueueCreate(10, sizeof(float[6]));
+	/*IMUQueue = xQueueCreate(10, sizeof(float[6]));
 	if(IMUQueue == NULL){ // Check if queue creation failed
 		printf("Error xQueueCreate function\n");
-	}
+	}*/
 
 	xTaskCreate(TaskEncoder,
         "Task encoder",
@@ -93,7 +93,7 @@ void FreeRTOS_Init(){
         CONFIG_MICRO_ROS_APP_TASK_PRIO,
         NULL);	
 	
-	xTaskCreate(TaskReadDataIMU,
+	/*xTaskCreate(TaskReadDataIMU,
 		"Task to read data IMU",
 		1024,
 		NULL,
@@ -105,7 +105,7 @@ void FreeRTOS_Init(){
 		CONFIG_MICRO_ROS_APP_STACK,
 		NULL,
 		CONFIG_MICRO_ROS_APP_TASK_PRIO,
-		NULL);
+		NULL);*/
 
 	xTaskCreate(TaskPWM,
 		"Task PWM",
@@ -113,6 +113,15 @@ void FreeRTOS_Init(){
 		NULL,
 		CONFIG_MICRO_ROS_APP_TASK_PRIO,
 		NULL);
+	
+	xTaskCreate(TaskSPI,
+		"Task SPI Slave",
+		2048,
+		NULL,
+		tskIDLE_PRIORITY+1,
+		NULL);
+
+	
 }
 
 /**
@@ -130,7 +139,7 @@ void TaskEncoder(void *argument){
     for(;;){
 		
 		angular_velocity.data = ((float)encoder_pulses/20)*360;
-		printf("Publishing angular velocity: %f\n", angular_velocity.data);
+		//printf("Publishing angular velocity: %f\n", angular_velocity.data);
 		
 		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
 
@@ -142,7 +151,7 @@ void TaskEncoder(void *argument){
  * @brief Task that reads the accelerometer and gyroscope data from the MPU6050 and saves it in a float array
  * @param argument Pointer to the task arguments (not used)
  */
-void TaskReadDataIMU(void *argument){
+/*void TaskReadDataIMU(void *argument){
 	esp_err_t ret;
 	float values[6];
 	uint8_t mpu6050_deviceid;
@@ -175,14 +184,14 @@ void TaskReadDataIMU(void *argument){
 
 		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
-}
+}*/
 
 /**
  * @brief Task that receives the IMU data from the queue, converts it to a IMU msg 
  * and publishes it to a topic using micro-ROS
  * @param argument Pointer to the task arguments (not used)
  */
-void TaskPublishDataIMU(void *argument){
+/*void TaskPublishDataIMU(void *argument){
 
 	float values[6];
 	sensor_msgs__msg__Imu *dataIMU = sensor_msgs__msg__Imu__create();
@@ -206,12 +215,12 @@ void TaskPublishDataIMU(void *argument){
 
 		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
-}
+}*/
 
 /**
  * @brief Initialize i2c and MPU6050.
  */
-static void i2c_sensor_mpu6050_init(void){
+/*static void i2c_sensor_mpu6050_init(void){
     esp_err_t ret;
 
     i2c_Init();
@@ -223,7 +232,7 @@ static void i2c_sensor_mpu6050_init(void){
 
     ret = mpu6050_wake_up(mpu6050);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
-}
+}*/
 
 /**
  * @brief Convert the values of g to m/s2
@@ -329,13 +338,13 @@ void TaskPWM(void *argument){
 	while(1){
 
 		// Giro en un sentido
-		printf("Sentido 1\n");
+		//printf("Sentido 1\n");
 		motor_forward(MCPWM_UNIT_0, MCPWM_TIMER_0, 50, MCPWM_OPR_B, MCPWM_OPR_A);
 		motor_forward(MCPWM_UNIT_0, MCPWM_TIMER_1, 20, MCPWM_OPR_B, MCPWM_OPR_A);
 		vTaskDelay(pdMS_TO_TICKS(5000));
 
 		// Giro en otro sentido
-		printf("Sentido 2\n");
+		//printf("Sentido 2\n");
 		motor_backward(MCPWM_UNIT_0, MCPWM_TIMER_0, 50, MCPWM_OPR_A, MCPWM_OPR_B);
 		motor_backward(MCPWM_UNIT_0, MCPWM_TIMER_1, 20, MCPWM_OPR_A, MCPWM_OPR_B);
 		vTaskDelay(pdMS_TO_TICKS(5000));
@@ -348,5 +357,51 @@ void TaskPWM(void *argument){
 	}
 }
 
+void TaskSPI(void *argument){
+	//Configuration for the SPI bus
+    spi_bus_config_t buscfg={
+        .mosi_io_num=GPIO_MOSI,
+        .miso_io_num=GPIO_MISO,
+        .sclk_io_num=GPIO_SCLK,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+    };
 
+    //Configuration for the SPI slave interface
+    spi_slave_interface_config_t slvcfg={
+        .mode=0,
+        .spics_io_num=GPIO_CS,
+        .queue_size=3,
+        .flags=0
+    };
+	    
+	//gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLDOWN_ONLY);
+	//gpio_set_pull_mode(GPIO_MISO, GPIO_PULLDOWN_ONLY);
+    gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLDOWN_ONLY);
+    gpio_set_pull_mode(GPIO_CS, GPIO_PULLDOWN_ONLY);
+	
+	spi_slave_initialize(HSPI_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
 
+	char recvbuf[2]="";
+    
+    spi_slave_transaction_t t;
+    memset(&t, 0, sizeof(t));
+	t.length = 2 * 8;
+    t.rx_buffer = recvbuf;
+	
+	while(1) {
+		
+		memset(recvbuf,'\0', sizeof(recvbuf));
+
+        // Wait for data from master
+		//printf("Esperando datos\n");
+        esp_err_t ret = spi_slave_transmit(HSPI_HOST, &t, portMAX_DELAY);
+        if(ret == ESP_OK) {
+            printf("Received: %s\n", recvbuf);
+
+        } else {
+            printf("SPI slave error\n");
+        }
+		//vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}

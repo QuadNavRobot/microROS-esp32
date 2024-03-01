@@ -20,7 +20,7 @@
 #include "../inc/mpu6050.h"
 #include "../inc/i2c_config.h"
 #include "driver/mcpwm.h"
-
+#include "driver/spi_slave.h"
 
 // Micro-ROS definitions
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
@@ -45,6 +45,7 @@ float convertDegreesToRadians(float value);
 void motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, mcpwm_generator_t gen_in1, mcpwm_generator_t gen_in2);
 void motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
 void motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
+void TaskSPI(void *argument);
 
 // Variables
 rcl_allocator_t allocator;
@@ -62,3 +63,8 @@ static mpu6050_handle_t mpu6050 = NULL;
 QueueHandle_t IMUQueue;
 
 int encoder_pulses = 0; // Cuenta los pulsos del encoder
+
+#define GPIO_MOSI 12  // azul     -> 38 vision bonnet
+#define GPIO_MISO 13  // amarillo -> 35 vision bonnet
+#define GPIO_SCLK 15  // verde    -> 40 vision bonnet
+#define GPIO_CS 14    // lila     -> 12 vision bonnet
