@@ -9,6 +9,7 @@
 #include <std_msgs/msg/int32.h>
 #include <sensor_msgs/msg/imu.h>
 #include <std_msgs/msg/float32.h>
+#include <std_msgs/msg/float32_multi_array.h>
 #include <uros_network_interfaces.h>
 #include "unity.h"
 #include "esp_log.h"
@@ -31,7 +32,6 @@
 
 // Functions
 void PWM_config();
-void isr_handler();
 void FreeRTOS_Init();
 void init_microROS();
 esp_err_t init_encoder();
@@ -42,6 +42,7 @@ void TaskReadDataIMU(void *argument);
 void TaskPublishDataIMU(void *argument);
 static void i2c_sensor_mpu6050_init(void);
 float convertDegreesToRadians(float value);
+static void IRAM_ATTR isr_handler(void* arg);
 void motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, mcpwm_generator_t gen_in1, mcpwm_generator_t gen_in2);
 void motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
 void motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
@@ -62,9 +63,17 @@ static mpu6050_handle_t mpu6050 = NULL;
 
 QueueHandle_t IMUQueue;
 
-int encoder_pulses = 0; // Cuenta los pulsos del encoder
+int encoder_pulses_FR = 0; // Cuenta los pulsos del encoder
+int encoder_pulses_FL = 0;
+int encoder_pulses_RR = 0;
+int encoder_pulses_RL = 0;
 
 #define GPIO_MOSI 12  // azul     -> 38 vision bonnet
-#define GPIO_MISO 13  // amarillo -> 35 vision bonnet
+//#define GPIO_MISO 13  // amarillo -> 35 vision bonnet
 #define GPIO_SCLK 15  // verde    -> 40 vision bonnet
 #define GPIO_CS 14    // lila     -> 12 vision bonnet
+
+#define GPIO_ENCODER_FR 34 // front right wheel
+#define GPIO_ENCODER_FL 35 // front left wheel
+#define GPIO_ENCODER_RR 32 // rear right wheel
+#define GPIO_ENCODER_RL 33 // rear left wheel

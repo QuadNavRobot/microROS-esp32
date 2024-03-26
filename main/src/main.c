@@ -38,29 +38,29 @@ void init_microROS(){
 	RCCHECK(rclc_publisher_init_default(
 		&publisher_encoder,
 		&node_encoder,
-		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
+		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
 		"encoder"));
 
-	/*RCCHECK(rclc_node_init_default(&node_IMU, "IMU_node", "", &support));
+	RCCHECK(rclc_node_init_default(&node_IMU, "IMU_node", "", &support));
 
 	RCCHECK(rclc_publisher_init_default(
 		&publisher_IMU,
 		&node_IMU,
 		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-		"IMU"));*/
+		"IMU"));
 
 	RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
 	
 }
 
 /**
- * @brief Configure GPIO 27 to receive encoder interrupts.
+ * @brief Configure GPIO pins to receive encoder interrupts.
  * @return esp_err_t 
  */
 esp_err_t init_encoder(){
 
 	gpio_config_t gpio_config_struct = {
-		.pin_bit_mask = (1ULL << 27),
+		.pin_bit_mask = ((1ULL << GPIO_ENCODER_FR) | (1ULL << GPIO_ENCODER_FL) | (1ULL << GPIO_ENCODER_RR) | (1ULL << GPIO_ENCODER_RL)),
 		.mode = GPIO_MODE_INPUT,
 		.pull_up_en = GPIO_PULLUP_DISABLE,
 		.pull_down_en = GPIO_PULLDOWN_ENABLE,
@@ -70,8 +70,11 @@ esp_err_t init_encoder(){
 	gpio_config(&gpio_config_struct);
 	
 	gpio_install_isr_service(0);
-	
-	gpio_isr_handler_add(27,isr_handler, NULL);
+
+	gpio_isr_handler_add(GPIO_ENCODER_FR, isr_handler, (void*)GPIO_ENCODER_FR);
+	gpio_isr_handler_add(GPIO_ENCODER_FL, isr_handler, (void*)GPIO_ENCODER_FL);
+	gpio_isr_handler_add(GPIO_ENCODER_RR, isr_handler, (void*)GPIO_ENCODER_RR);
+	gpio_isr_handler_add(GPIO_ENCODER_RL, isr_handler, (void*)GPIO_ENCODER_RL);
 
 	return ESP_OK;
 }
@@ -81,10 +84,10 @@ esp_err_t init_encoder(){
  */
 void FreeRTOS_Init(){
 
-	/*IMUQueue = xQueueCreate(10, sizeof(float[6]));
+	IMUQueue = xQueueCreate(10, sizeof(float[6]));
 	if(IMUQueue == NULL){ // Check if queue creation failed
 		printf("Error xQueueCreate function\n");
-	}*/
+	}
 
 	xTaskCreate(TaskEncoder,
         "Task encoder",
@@ -93,7 +96,7 @@ void FreeRTOS_Init(){
         CONFIG_MICRO_ROS_APP_TASK_PRIO,
         NULL);	
 	
-	/*xTaskCreate(TaskReadDataIMU,
+	xTaskCreate(TaskReadDataIMU,
 		"Task to read data IMU",
 		1024,
 		NULL,
@@ -105,7 +108,7 @@ void FreeRTOS_Init(){
 		CONFIG_MICRO_ROS_APP_STACK,
 		NULL,
 		CONFIG_MICRO_ROS_APP_TASK_PRIO,
-		NULL);*/
+		NULL);
 
 	xTaskCreate(TaskPWM,
 		"Task PWM",
@@ -127,20 +130,36 @@ void FreeRTOS_Init(){
 /**
  * @brief ISR of encoder interrupts
  */
-void isr_handler(){encoder_pulses++;}
+static void IRAM_ATTR isr_handler(void* arg){
+	uint32_t gpio_num = (uint32_t) arg;
+	
+	if(gpio_num == GPIO_ENCODER_FL){
+		encoder_pulses_FL++;
+	}else if(gpio_num == GPIO_ENCODER_FR){
+		encoder_pulses_FR++;
+	}else if(gpio_num == GPIO_ENCODER_RR){
+		encoder_pulses_RR++;
+	}else{
+		encoder_pulses_RL++;
+	}
+}
 
 /**
  * @brief Task that calculates the angular velocity and publishes it in the topic.
  * @param argument 
  */
 void TaskEncoder(void *argument){
-	std_msgs__msg__Float32 angular_velocity;
-	
+	std_msgs__msg__Float32MultiArray angular_velocity;
+	std_msgs__msg__Float32MultiArray__init (&angular_velocity);
+	angular_velocity.data.data = malloc(sizeof(float)*4);
+	angular_velocity.data.capacity = 4;
+	angular_velocity.data.size = 4;
     for(;;){
 		
-		angular_velocity.data = ((float)encoder_pulses/20)*360;
-		//printf("Publishing angular velocity: %f\n", angular_velocity.data);
-		
+		angular_velocity.data.data[0] = ((float)encoder_pulses_FL/20)*360;
+		angular_velocity.data.data[1] = ((float)encoder_pulses_FR/20)*360;
+		angular_velocity.data.data[2] = ((float)encoder_pulses_RR/20)*360;
+		angular_velocity.data.data[3] = ((float)encoder_pulses_RL/20)*360;
 		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
 
 		vTaskDelay(pdMS_TO_TICKS(1000));
@@ -151,7 +170,7 @@ void TaskEncoder(void *argument){
  * @brief Task that reads the accelerometer and gyroscope data from the MPU6050 and saves it in a float array
  * @param argument Pointer to the task arguments (not used)
  */
-/*void TaskReadDataIMU(void *argument){
+void TaskReadDataIMU(void *argument){
 	esp_err_t ret;
 	float values[6];
 	uint8_t mpu6050_deviceid;
@@ -177,21 +196,21 @@ void TaskEncoder(void *argument){
 		values[3] = gyro.gyro_x;
 		values[4] = gyro.gyro_y;
 		values[5] = gyro.gyro_z;
-
+		
     	if (xQueueSend(IMUQueue, &values, portMAX_DELAY) != pdPASS) {
         	printf("ERROR: full queue.\n");
     	}
 
 		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
-}*/
+}
 
 /**
  * @brief Task that receives the IMU data from the queue, converts it to a IMU msg 
  * and publishes it to a topic using micro-ROS
  * @param argument Pointer to the task arguments (not used)
  */
-/*void TaskPublishDataIMU(void *argument){
+void TaskPublishDataIMU(void *argument){
 
 	float values[6];
 	sensor_msgs__msg__Imu *dataIMU = sensor_msgs__msg__Imu__create();
@@ -215,12 +234,12 @@ void TaskEncoder(void *argument){
 
 		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
-}*/
+}
 
 /**
  * @brief Initialize i2c and MPU6050.
  */
-/*static void i2c_sensor_mpu6050_init(void){
+static void i2c_sensor_mpu6050_init(void){
     esp_err_t ret;
 
     i2c_Init();
@@ -232,7 +251,7 @@ void TaskEncoder(void *argument){
 
     ret = mpu6050_wake_up(mpu6050);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
-}*/
+}
 
 /**
  * @brief Convert the values of g to m/s2
@@ -361,7 +380,7 @@ void TaskSPI(void *argument){
 	//Configuration for the SPI bus
     spi_bus_config_t buscfg={
         .mosi_io_num=GPIO_MOSI,
-        .miso_io_num=GPIO_MISO,
+        .miso_io_num=-1,
         .sclk_io_num=GPIO_SCLK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
@@ -377,16 +396,16 @@ void TaskSPI(void *argument){
 	    
 	//gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLDOWN_ONLY);
 	//gpio_set_pull_mode(GPIO_MISO, GPIO_PULLDOWN_ONLY);
-    gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLDOWN_ONLY);
-    gpio_set_pull_mode(GPIO_CS, GPIO_PULLDOWN_ONLY);
+    //gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLDOWN_ONLY);
+    //gpio_set_pull_mode(GPIO_CS, GPIO_PULLDOWN_ONLY);
 	
 	spi_slave_initialize(HSPI_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
 
-	char recvbuf[2]="";
+	char recvbuf[100]="";
     
     spi_slave_transaction_t t;
     memset(&t, 0, sizeof(t));
-	t.length = 2 * 8;
+	t.length = 100 * 8;
     t.rx_buffer = recvbuf;
 	
 	while(1) {
