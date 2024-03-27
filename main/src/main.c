@@ -49,6 +49,12 @@ void init_microROS(){
 		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
 		"IMU"));
 
+	RCCHECK(rclc_publisher_init_default(
+		&publisher_pose,
+		&node_IMU,
+		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+		"pose_estimation"));		
+
 	RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
 	
 }
@@ -84,8 +90,18 @@ esp_err_t init_encoder(){
  */
 void FreeRTOS_Init(){
 
-	IMUQueue = xQueueCreate(10, sizeof(float[6]));
-	if(IMUQueue == NULL){ // Check if queue creation failed
+	IMUPublishValuesQueue = xQueueCreate(10, sizeof(float[6]));
+	if(IMUPublishValuesQueue == NULL){ // Check if queue creation failed
+		printf("Error xQueueCreate function\n");
+	}
+
+	IMUValuesQueue = xQueueCreate(10, sizeof(float[6]));
+	if(IMUValuesQueue == NULL){ // Check if queue creation failed
+		printf("Error xQueueCreate function\n");
+	}
+	
+	EstimedQueue = xQueueCreate(10, sizeof(float[3]));
+	if(EstimedQueue == NULL){ // Check if queue creation failed
 		printf("Error xQueueCreate function\n");
 	}
 
@@ -124,7 +140,19 @@ void FreeRTOS_Init(){
 		tskIDLE_PRIORITY+1,
 		NULL);
 
-	
+	xTaskCreate(TaskFusion,
+		"Task fusion sensorial",
+		2048,
+		NULL,
+		tskIDLE_PRIORITY+1,
+		NULL);
+
+	xTaskCreate(TaskPublishFusion,
+		"Task etimationp",
+		2048,
+		NULL,
+		tskIDLE_PRIORITY+1,
+		NULL);
 }
 
 /**
@@ -156,10 +184,10 @@ void TaskEncoder(void *argument){
 	angular_velocity.data.size = 4;
     for(;;){
 		
-		angular_velocity.data.data[0] = ((float)encoder_pulses_FL/20)*360;
-		angular_velocity.data.data[1] = ((float)encoder_pulses_FR/20)*360;
-		angular_velocity.data.data[2] = ((float)encoder_pulses_RR/20)*360;
-		angular_velocity.data.data[3] = ((float)encoder_pulses_RL/20)*360;
+		angular_velocity.data.data[0] = ((float)encoder_pulses_FL/20)*3.14;
+		angular_velocity.data.data[1] = ((float)encoder_pulses_FR/20)*3.14;
+		angular_velocity.data.data[2] = ((float)encoder_pulses_RR/20)*3.14;
+		angular_velocity.data.data[3] = ((float)encoder_pulses_RL/20)*3.14;
 		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
 
 		vTaskDelay(pdMS_TO_TICKS(1000));
@@ -197,7 +225,10 @@ void TaskReadDataIMU(void *argument){
 		values[4] = gyro.gyro_y;
 		values[5] = gyro.gyro_z;
 		
-    	if (xQueueSend(IMUQueue, &values, portMAX_DELAY) != pdPASS) {
+    	if (xQueueSend(IMUPublishValuesQueue, &values, portMAX_DELAY) != pdPASS) {
+        	printf("ERROR: full queue.\n");
+    	}
+		if (xQueueSend(IMUValuesQueue, &values, portMAX_DELAY) != pdPASS) {
         	printf("ERROR: full queue.\n");
     	}
 
@@ -218,7 +249,7 @@ void TaskPublishDataIMU(void *argument){
 	while(1){
 
 
-    if(xQueueReceive(IMUQueue, values, portMAX_DELAY) == pdTRUE){ //Get the data from the queue
+    if(xQueueReceive(IMUPublishValuesQueue, values, portMAX_DELAY) == pdTRUE){ //Get the data from the queue
 		dataIMU->linear_acceleration.x = convertGToMS2(values[0]);
 		dataIMU->linear_acceleration.y = convertGToMS2(values[1]);
 		dataIMU->linear_acceleration.z = convertGToMS2(values[2]);
@@ -423,4 +454,96 @@ void TaskSPI(void *argument){
         }
 		//vTaskDelay(pdMS_TO_TICKS(1000));
     }
+}
+
+void TaskFusion(void *argument){
+	std_msgs__msg__Float32MultiArray msg;
+  	std_msgs__msg__Float32MultiArray__init(&msg);
+  	msg.data.data = malloc(sizeof(float) * 3);
+  	msg.data.capacity = 3;
+  	msg.data.size = 3;
+
+  	float values[6]; // Array to store the values read from the queue
+
+  	float v_yaw_fusion = 0.0;
+  	Position v_position_fusion = {0.0, 0.0};
+  	DataIMU prev_velocity_imu = {0.0, 0.0, 0.0};
+
+  	uint32_t current_time;
+  	uint32_t prev_time = (uint32_t) xTaskGetTickCount();
+
+	static float d_t_imu = 1.0;
+
+	while (1){
+		if(xQueueReceive(IMUValuesQueue, values, portMAX_DELAY) == pdTRUE){ //Get the data from the queue
+			current_time = (uint32_t) xTaskGetTickCount();
+        	float ticks_time = (float)(current_time - prev_time);//Cada tick es 1ms
+        	float dt = ticks_time / 1000;
+
+			Wheels despl_linear = { 
+					(encoder_pulses_RR/20) * 6.5,
+					(encoder_pulses_FR/20) * 6.5,
+					(encoder_pulses_RL/20) * 6.5,
+					(encoder_pulses_FL/20) * 6.5};
+			
+			//Reinicio el contador de las ruedas
+			encoder_pulses_FR = 0;
+			encoder_pulses_FL = 0;
+			encoder_pulses_RL = 0;
+			encoder_pulses_RR = 0;
+
+			VelocityWheels vel_wheels = calculate_velocities_wheels(despl_linear, dt);
+
+			DataIMU linear_aceleration = {values[0],
+										  values[1],
+										  values[2]};
+
+			DataIMU angular_velocity = {convertDegreesToRadians(values[3]),
+										convertDegreesToRadians(values[4]),
+										convertDegreesToRadians(values[5])};
+
+			//Estimaciones de yaw.
+			float wheels_yaw_estimed = calculate_yaw_wheels(vel_wheels, v_yaw_fusion, 0.13, dt);
+			float imu_yaw_estimed = calculate_yaw_imu(angular_velocity, v_yaw_fusion, d_t_imu);
+
+			v_yaw_fusion = get_orientation_f_c(imu_yaw_estimed, wheels_yaw_estimed, alpha);
+
+			//Estimaciones de las posiciones.
+			Position position_wheels_estime = calculate_position_wheels(vel_wheels, v_position_fusion, dt, v_yaw_fusion);
+			Position position_imu_estime = calculate_position_imu(linear_aceleration, &prev_velocity_imu, v_position_fusion, d_t_imu, v_yaw_fusion);
+
+			Position position_fusion = get_position_f_c(position_imu_estime, position_wheels_estime, gamma, beta);
+			v_position_fusion = position_fusion;
+
+			prev_time = current_time;
+
+			values[0] = v_position_fusion.x;
+			values[1] = v_position_fusion.y;
+			values[2] = v_yaw_fusion;
+
+	    	if (xQueueSend(EstimedQueue, &values, portMAX_DELAY) != pdPASS) {
+	    		printf("ERROR: full queue.\n");
+	    	}
+		}
+	}
+}
+
+void TaskPublishFusion(void *argument){
+	float values[3];
+
+	std_msgs__msg__Float32MultiArray msg;
+	std_msgs__msg__Float32MultiArray__init(&msg);
+	msg.data.data = malloc(sizeof(float) * 3);
+	msg.data.capacity = 3;
+	msg.data.size = 3;
+
+	for(;;){
+    	if(xQueueReceive(EstimedQueue, values, portMAX_DELAY) == pdTRUE){
+
+			msg.data.data[0] = values[0];
+			msg.data.data[1] =  values[1];
+			msg.data.data[2] =  values[2];
+		    RCSOFTCHECK(rcl_publish(&publisher_pose, &msg, NULL));
+  		}
+	}
 }

@@ -22,6 +22,7 @@
 #include "../inc/i2c_config.h"
 #include "driver/mcpwm.h"
 #include "driver/spi_slave.h"
+#include "compl_filter_library.h"
 
 // Micro-ROS definitions
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
@@ -47,6 +48,8 @@ void motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, mcpwm_generator
 void motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
 void motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
 void TaskSPI(void *argument);
+void TaskFusion(void *argument);
+void TaskPublishFusion(void *argument);
 
 // Variables
 rcl_allocator_t allocator;
@@ -58,10 +61,17 @@ rcl_publisher_t publisher_encoder;
 rcl_node_t node_encoder;
 rcl_publisher_t publisher_IMU;
 rcl_node_t node_IMU;
+rcl_publisher_t publisher_pose;
 
 static mpu6050_handle_t mpu6050 = NULL;
 
-QueueHandle_t IMUQueue;
+QueueHandle_t IMUPublishValuesQueue;
+QueueHandle_t IMUValuesQueue;
+QueueHandle_t EstimedQueue;
+
+#define alpha 0.001
+#define beta 0.95
+#define gamma 0.99
 
 int encoder_pulses_FR = 0; // Cuenta los pulsos del encoder
 int encoder_pulses_FL = 0;
