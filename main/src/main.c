@@ -90,39 +90,39 @@ void FreeRTOS_Init(){
 	}
 
 	xTaskCreate(TaskEncoder,
-        "Task encoder",
-        CONFIG_MICRO_ROS_APP_STACK,
+        "Encoder",
+        2000,
         NULL,
         CONFIG_MICRO_ROS_APP_TASK_PRIO,
         NULL);	
 	
 	xTaskCreate(TaskReadDataIMU,
-		"Task to read data IMU",
-		1024,
+		"Read IMU",
+		2000,
 		NULL,
 		tskIDLE_PRIORITY+1,
 		NULL);
 
 	xTaskCreate(TaskPublishDataIMU,
-		"Task to publish data IMU",
-		CONFIG_MICRO_ROS_APP_STACK,
+		"Publish IMU",
+		2000,
 		NULL,
 		CONFIG_MICRO_ROS_APP_TASK_PRIO,
 		NULL);
 
 	xTaskCreate(TaskPWM,
 		"Task PWM",
-		CONFIG_MICRO_ROS_APP_STACK,
+		2000,
 		NULL,
 		CONFIG_MICRO_ROS_APP_TASK_PRIO,
 		NULL);
 	
-	xTaskCreate(TaskSPI,
+	/*xTaskCreate(TaskSPI,
 		"Task SPI Slave",
 		2048,
 		NULL,
 		tskIDLE_PRIORITY+1,
-		NULL);
+		NULL);*/
 
 	
 }
@@ -149,6 +149,7 @@ static void IRAM_ATTR isr_handler(void* arg){
  * @param argument 
  */
 void TaskEncoder(void *argument){
+
 	std_msgs__msg__Float32MultiArray angular_velocity;
 	std_msgs__msg__Float32MultiArray__init (&angular_velocity);
 	angular_velocity.data.data = malloc(sizeof(float)*4);
@@ -156,6 +157,7 @@ void TaskEncoder(void *argument){
 	angular_velocity.data.size = 4;
     for(;;){
 		
+		printf("Stack free - ENCODER: %d \n",uxTaskGetStackHighWaterMark(NULL)); // Devuelve el stack free - Aprox 360 words free
 		angular_velocity.data.data[0] = ((float)encoder_pulses_FL/20)*360;
 		angular_velocity.data.data[1] = ((float)encoder_pulses_FR/20)*360;
 		angular_velocity.data.data[2] = ((float)encoder_pulses_RR/20)*360;
@@ -183,6 +185,7 @@ void TaskReadDataIMU(void *argument){
     TEST_ASSERT_EQUAL(ESP_OK, ret);
 	
 	while(1){
+		printf("Stack free - READ: %d \n",uxTaskGetStackHighWaterMark(NULL));
 		ret = mpu6050_get_acce(mpu6050, &acce);
 		TEST_ASSERT_EQUAL(ESP_OK, ret);
 
@@ -200,7 +203,7 @@ void TaskReadDataIMU(void *argument){
     	if (xQueueSend(IMUQueue, &values, portMAX_DELAY) != pdPASS) {
         	printf("ERROR: full queue.\n");
     	}
-
+		
 		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
 }
@@ -226,13 +229,13 @@ void TaskPublishDataIMU(void *argument){
 		dataIMU->angular_velocity.x = convertDegreesToRadians(values[3]);
 		dataIMU->angular_velocity.y = convertDegreesToRadians(values[4]);
 		dataIMU->angular_velocity.z = convertDegreesToRadians(values[5]);
-
+		printf("Stack free - PUBLISH: %d \n",uxTaskGetStackHighWaterMark(NULL));
 		RCSOFTCHECK(rcl_publish(&publisher_IMU, dataIMU, NULL));
-		printf("Datos IMU publicados.\n");
+		//printf("Datos IMU publicados.\n");
 	}
 
 
-		vTaskDelay(pdMS_TO_TICKS(1000));
+		//vTaskDelay(pdMS_TO_TICKS(1000));
 	}
 }
 
@@ -273,154 +276,85 @@ float convertDegreesToRadians(float value) {
     return value * M_PI /180;
 }
 
-/**
- * @brief Configure PWM for motor driver L298 (two motors)
- * 
- */
+
 void PWM_config(){
+
+	ledc_timer_config_t ledc_timer;
+
+	ledc_timer.speed_mode = LEDC_LOW_SPEED_MODE;
+	ledc_timer.duty_resolution = LEDC_TIMER_14_BIT;
+	ledc_timer.timer_num = LEDC_TIMER_0;
+	ledc_timer.freq_hz = 1000;
+	ledc_timer.clk_cfg = LEDC_AUTO_CLK;
+
+	ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
+
+	ledc_channel_config_t ledc_channel[4];
+
+	ledc_channel[0].gpio_num = GPIO_ENA_M1;
+	ledc_channel[0].channel = LEDC_CHANNEL_0;
+
+	ledc_channel[1].gpio_num = GPIO_ENA_M2;
+	ledc_channel[1].channel = LEDC_CHANNEL_1;
+
+	ledc_channel[2].gpio_num = GPIO_ENA_M3;
+	ledc_channel[2].channel = LEDC_CHANNEL_2;
+
+	ledc_channel[3].gpio_num = GPIO_ENA_M4;
+	ledc_channel[3].channel = LEDC_CHANNEL_3;
+
+	for(int i = 0; i < 4; i++){
+		ledc_channel[i].speed_mode = LEDC_LOW_SPEED_MODE;
+		ledc_channel[i].intr_type = LEDC_INTR_DISABLE;
+		ledc_channel[i].timer_sel = LEDC_TIMER_0;
+		ledc_channel[i].duty = 0;
+		ledc_channel[i].hpoint = 0;
+		ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel[i]));
+	}
 	
-	// MOTOR 1
-	// gpio initialization
-	mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, 16); //IN1
-	mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, 17); //IN2
-
-	// pwm config
-	mcpwm_config_t pwm_config = {
-		.frequency = 1000,
-		.cmpr_a = 0,
-		.cmpr_b = 0,
-		.duty_mode = MCPWM_DUTY_MODE_0,
-		.counter_mode = MCPWM_UP_COUNTER
-	};
-
-	mcpwm_init(MCPWM_UNIT_0,MCPWM_TIMER_0, &pwm_config);
-
-	// MOTOR 2
-	mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, 4); // IN3
-	mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1B, 5); // IN4
-
-	mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config);
+	gpio_set_direction(GPIO_IN1_DM1, GPIO_MODE_OUTPUT);
+	gpio_set_direction(GPIO_IN2_DM1, GPIO_MODE_OUTPUT);
+	gpio_set_direction(GPIO_IN1_DM2, GPIO_MODE_OUTPUT);
+	gpio_set_direction(GPIO_IN2_DM2, GPIO_MODE_OUTPUT);
 }
 
-/**
- * @brief Make the motor rotate forward.
- * 
- * @param mcpwm_num 
- * @param timer_num 
- * @param duty_cycle 
- * @param gen_low 
- * @param gen_pwm 
- */
-void motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm){
-	mcpwm_set_signal_low(mcpwm_num, timer_num, gen_low);
-    mcpwm_set_duty(mcpwm_num, timer_num, gen_pwm, duty_cycle);
-    mcpwm_set_duty_type(mcpwm_num, timer_num, gen_pwm, MCPWM_DUTY_MODE_0);	
-}
-
-/**
- * @brief Make the motor rotate backward.
- * 
- * @param mcpwm_num 
- * @param timer_num 
- * @param duty_cycle 
- * @param gen_low 
- * @param gen_pwm 
- */
-void motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm){
-	mcpwm_set_signal_low(mcpwm_num, timer_num, gen_low);
-    mcpwm_set_duty(mcpwm_num, timer_num, gen_pwm, duty_cycle);
-    mcpwm_set_duty_type(mcpwm_num, timer_num, gen_pwm, MCPWM_DUTY_MODE_0);
-}
-
-/**
- * @brief Make the motor stop.
- * 
- * @param mcpwm_num 
- * @param timer_num 
- * @param gen_in1 
- * @param gen_in2 
- */
-void motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, mcpwm_generator_t gen_in1, mcpwm_generator_t gen_in2){
-    mcpwm_set_signal_low(mcpwm_num, timer_num, gen_in1);
-    mcpwm_set_signal_low(mcpwm_num, timer_num, gen_in2);
-}
-
-/**
- * @brief Task that handler the pwm of motors. 
- * 
- * @param argument 
- */
 void TaskPWM(void *argument){
-
+	
 	PWM_config();
 
-	while(1){
+	for(;;){
 
-		// Giro en un sentido
-		//printf("Sentido 1\n");
-		motor_forward(MCPWM_UNIT_0, MCPWM_TIMER_0, 50, MCPWM_OPR_B, MCPWM_OPR_A);
-		motor_forward(MCPWM_UNIT_0, MCPWM_TIMER_1, 20, MCPWM_OPR_B, MCPWM_OPR_A);
-		vTaskDelay(pdMS_TO_TICKS(5000));
+		motor_forward(1,LEDC_CHANNEL_0, 8192);
+		motor_forward(1,LEDC_CHANNEL_1, 12288);
 
-		// Giro en otro sentido
-		//printf("Sentido 2\n");
-		motor_backward(MCPWM_UNIT_0, MCPWM_TIMER_0, 50, MCPWM_OPR_A, MCPWM_OPR_B);
-		motor_backward(MCPWM_UNIT_0, MCPWM_TIMER_1, 20, MCPWM_OPR_A, MCPWM_OPR_B);
-		vTaskDelay(pdMS_TO_TICKS(5000));
-
-		// Stop
-		//printf("Sentido 3\n");
-		//motor_stop(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_OPR_B);
-		//motor_stop(MCPWM_UNIT_0, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_OPR_B);
-		vTaskDelay(pdMS_TO_TICKS(5000));
+		vTaskDelay(100);
 	}
 }
 
-void TaskSPI(void *argument){
-	//Configuration for the SPI bus
-    spi_bus_config_t buscfg={
-        .mosi_io_num=GPIO_MOSI,
-        .miso_io_num=-1,
-        .sclk_io_num=GPIO_SCLK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-    };
+/***
+ * calculo del dutty -> 2**(duty_resolution)*dutty_percentage%. Ej: 2**(14)*50% dutty 50%
+*/
+void motor_forward(int driver_motor, ledc_channel_t channel, uint32_t dutty){
 
-    //Configuration for the SPI slave interface
-    spi_slave_interface_config_t slvcfg={
-        .mode=0,
-        .spics_io_num=GPIO_CS,
-        .queue_size=3,
-        .flags=0
-    };
-	    
-	//gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLDOWN_ONLY);
-	//gpio_set_pull_mode(GPIO_MISO, GPIO_PULLDOWN_ONLY);
-    //gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLDOWN_ONLY);
-    //gpio_set_pull_mode(GPIO_CS, GPIO_PULLDOWN_ONLY);
-	
-	spi_slave_initialize(HSPI_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
+	if(driver_motor == 1){
+		gpio_set_level(GPIO_IN1_DM1, 1);
+		gpio_set_level(GPIO_IN2_DM1, 0);
+	}else{
+		gpio_set_level(GPIO_IN1_DM2, 1);
+		gpio_set_level(GPIO_IN2_DM2, 0);	
+	}
 
-	char recvbuf[100]="";
-    
-    spi_slave_transaction_t t;
-    memset(&t, 0, sizeof(t));
-	t.length = 100 * 8;
-    t.rx_buffer = recvbuf;
-	
-	while(1) {
-		
-		memset(recvbuf,'\0', sizeof(recvbuf));
+	ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, channel, dutty));
+}
 
-        // Wait for data from master
-		//printf("Esperando datos\n");
-        esp_err_t ret = spi_slave_transmit(HSPI_HOST, &t, portMAX_DELAY);
-        if(ret == ESP_OK) {
-            printf("Received: %s\n", recvbuf);
+void motor_backward(int driver_motor, ledc_channel_t channel, uint32_t dutty){
+	if(driver_motor == 1){
+		gpio_set_level(GPIO_IN1_DM1, 0);
+		gpio_set_level(GPIO_IN2_DM1, 1);
+	}else{
+		gpio_set_level(GPIO_IN1_DM2, 0);
+		gpio_set_level(GPIO_IN2_DM2, 1);	
+	}
 
-        } else {
-            printf("SPI slave error\n");
-        }
-		//vTaskDelay(pdMS_TO_TICKS(1000));
-    }
+	ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, channel, dutty));
 }

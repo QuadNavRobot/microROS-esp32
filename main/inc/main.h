@@ -22,6 +22,7 @@
 #include "../inc/i2c_config.h"
 #include "driver/mcpwm.h"
 #include "driver/spi_slave.h"
+#include "driver/ledc.h"
 
 // Micro-ROS definitions
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
@@ -43,9 +44,9 @@ void TaskPublishDataIMU(void *argument);
 static void i2c_sensor_mpu6050_init(void);
 float convertDegreesToRadians(float value);
 static void IRAM_ATTR isr_handler(void* arg);
-void motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, mcpwm_generator_t gen_in1, mcpwm_generator_t gen_in2);
-void motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
-void motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
+void motor_stop();
+void motor_forward(int driver_motor, ledc_channel_t channel, uint32_t dutty);
+void motor_backward(int driver_motor, ledc_channel_t channel, uint32_t dutty);
 void TaskSPI(void *argument);
 
 // Variables
@@ -77,3 +78,14 @@ int encoder_pulses_RL = 0;
 #define GPIO_ENCODER_FL 35 // front left wheel
 #define GPIO_ENCODER_RR 32 // rear right wheel
 #define GPIO_ENCODER_RL 33 // rear left wheel
+
+// PWM motor
+#define GPIO_IN1_DM1 15
+#define GPIO_IN2_DM1 12
+#define GPIO_IN1_DM2 27
+#define GPIO_IN2_DM2 13
+
+#define GPIO_ENA_M1 4
+#define GPIO_ENA_M2 16
+#define GPIO_ENA_M3 25
+#define GPIO_ENA_M4 26
