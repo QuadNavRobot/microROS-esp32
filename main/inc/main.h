@@ -64,6 +64,16 @@ static mpu6050_handle_t mpu6050 = NULL;
 
 QueueHandle_t IMUQueue;
 
+//ledc_channel_config_t ledc_channel[4];
+
+/*ledc_timer_config_t ledc_timer = {
+	.speed_mode = LEDC_LOW_SPEED_MODE,
+	.duty_resolution = LEDC_TIMER_7_BIT,
+	.timer_num = LEDC_TIMER_0,
+	.freq_hz = 100000,
+	.clk_cfg = LEDC_AUTO_CLK
+};*/
+
 int encoder_pulses_FR = 0; // Cuenta los pulsos del encoder
 int encoder_pulses_FL = 0;
 int encoder_pulses_RR = 0;
@@ -81,7 +91,7 @@ int encoder_pulses_RL = 0;
 
 // PWM motor
 #define GPIO_IN1_DM1 15
-#define GPIO_IN2_DM1 12
+#define GPIO_IN2_DM1 2
 #define GPIO_IN1_DM2 27
 #define GPIO_IN2_DM2 13
 

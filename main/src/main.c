@@ -83,8 +83,8 @@ esp_err_t init_encoder(){
  * @brief Create the tasks and queue.
  */
 void FreeRTOS_Init(){
-
-	IMUQueue = xQueueCreate(10, sizeof(float[6]));
+	
+	IMUQueue = xQueueCreate(20, sizeof(float[6]));
 	if(IMUQueue == NULL){ // Check if queue creation failed
 		printf("Error xQueueCreate function\n");
 	}
@@ -100,7 +100,7 @@ void FreeRTOS_Init(){
 		"Read IMU",
 		2000,
 		NULL,
-		tskIDLE_PRIORITY+1,
+		tskIDLE_PRIORITY+6,
 		NULL);
 
 	xTaskCreate(TaskPublishDataIMU,
@@ -112,9 +112,9 @@ void FreeRTOS_Init(){
 
 	xTaskCreate(TaskPWM,
 		"Task PWM",
-		2000,
+		2100,
 		NULL,
-		CONFIG_MICRO_ROS_APP_TASK_PRIO,
+		CONFIG_MICRO_ROS_APP_TASK_PRIO -1,
 		NULL);
 	
 	/*xTaskCreate(TaskSPI,
@@ -123,8 +123,6 @@ void FreeRTOS_Init(){
 		NULL,
 		tskIDLE_PRIORITY+1,
 		NULL);*/
-
-	
 }
 
 /**
@@ -164,7 +162,7 @@ void TaskEncoder(void *argument){
 		angular_velocity.data.data[3] = ((float)encoder_pulses_RL/20)*360;
 		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
 
-		vTaskDelay(pdMS_TO_TICKS(1000));
+		vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -204,7 +202,7 @@ void TaskReadDataIMU(void *argument){
         	printf("ERROR: full queue.\n");
     	}
 		
-		vTaskDelay(pdMS_TO_TICKS(1000));
+		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
 
@@ -235,7 +233,7 @@ void TaskPublishDataIMU(void *argument){
 	}
 
 
-		//vTaskDelay(pdMS_TO_TICKS(1000));
+		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
 
@@ -276,20 +274,26 @@ float convertDegreesToRadians(float value) {
     return value * M_PI /180;
 }
 
-
+/**
+ * PWM settings for engines
+*/
 void PWM_config(){
+	ledc_channel_config_t ledc_channel[4];
+	
+	ledc_timer_config_t ledc_timer = {
+	.speed_mode = LEDC_LOW_SPEED_MODE,
+	.duty_resolution = LEDC_TIMER_7_BIT,
+	.timer_num = LEDC_TIMER_0,
+	.freq_hz = 100000,
+	.clk_cfg = LEDC_AUTO_CLK
+	};
 
-	ledc_timer_config_t ledc_timer;
-
-	ledc_timer.speed_mode = LEDC_LOW_SPEED_MODE;
-	ledc_timer.duty_resolution = LEDC_TIMER_14_BIT;
-	ledc_timer.timer_num = LEDC_TIMER_0;
-	ledc_timer.freq_hz = 1000;
-	ledc_timer.clk_cfg = LEDC_AUTO_CLK;
+	gpio_set_direction(GPIO_IN1_DM1, GPIO_MODE_OUTPUT);
+	gpio_set_direction(GPIO_IN2_DM1, GPIO_MODE_OUTPUT);
+	gpio_set_direction(GPIO_IN1_DM2, GPIO_MODE_OUTPUT);
+	gpio_set_direction(GPIO_IN2_DM2, GPIO_MODE_OUTPUT);
 
 	ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
-
-	ledc_channel_config_t ledc_channel[4];
 
 	ledc_channel[0].gpio_num = GPIO_ENA_M1;
 	ledc_channel[0].channel = LEDC_CHANNEL_0;
@@ -311,28 +315,29 @@ void PWM_config(){
 		ledc_channel[i].hpoint = 0;
 		ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel[i]));
 	}
-	
-	gpio_set_direction(GPIO_IN1_DM1, GPIO_MODE_OUTPUT);
-	gpio_set_direction(GPIO_IN2_DM1, GPIO_MODE_OUTPUT);
-	gpio_set_direction(GPIO_IN1_DM2, GPIO_MODE_OUTPUT);
-	gpio_set_direction(GPIO_IN2_DM2, GPIO_MODE_OUTPUT);
 }
 
+/**
+ * Task to manage the operation of the engines
+*/
 void TaskPWM(void *argument){
 	
 	PWM_config();
-
+	
 	for(;;){
-
-		motor_forward(1,LEDC_CHANNEL_0, 8192);
-		motor_forward(1,LEDC_CHANNEL_1, 12288);
-
+	
+		motor_forward(1,LEDC_CHANNEL_0, 64);
+		motor_forward(1,LEDC_CHANNEL_1, 64);
+		motor_forward(2,LEDC_CHANNEL_2, 64);
+		motor_forward(2,LEDC_CHANNEL_3, 64);
+		printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
 		vTaskDelay(100);
 	}
 }
 
-/***
- * calculo del dutty -> 2**(duty_resolution)*dutty_percentage%. Ej: 2**(14)*50% dutty 50%
+/**
+ * 
+ * calculo del dutty -> 2**(duty_resolution)*dutty_percentage%. Ej: 2**(7)*50% dutty 50%
 */
 void motor_forward(int driver_motor, ledc_channel_t channel, uint32_t dutty){
 
@@ -345,6 +350,8 @@ void motor_forward(int driver_motor, ledc_channel_t channel, uint32_t dutty){
 	}
 
 	ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, channel, dutty));
+	ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, channel));
+	
 }
 
 void motor_backward(int driver_motor, ledc_channel_t channel, uint32_t dutty){
@@ -357,4 +364,5 @@ void motor_backward(int driver_motor, ledc_channel_t channel, uint32_t dutty){
 	}
 
 	ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, channel, dutty));
+	ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, channel));
 }
