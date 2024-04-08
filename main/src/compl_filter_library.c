@@ -60,18 +60,18 @@ double calculate_yaw_wheels(VelocityWheels velocity_wheels, double current_value
 
 /**
  * @brief Calculo de las velocidades angulares de las ruedas derechas eh izquierda.
- * @param angle_wheels Ángulos actuales de cada rueda respecto al chasis.
- * @param times_wheels Tiempo transcurrido desde la ultima medición de las ruedas.
+ * @param despl_linear Desplazamiento lineal producido por cada rueda desde el la medición anterior.
+ * @param d_time Tiempo transcurrido desde la ultima medición de las ruedas.
  * @return Velocidades angulares del promedio de las ruedas derechas eh izquierda.
  */
-VelocityWheels calculate_velocities_wheels(Wheels angle_wheels, double times_wheels)
+VelocityWheels calculate_velocities_wheels(Wheels despl_linear, double d_time)
 {
     double vel_w[4];
 
-    double *point_angles = &angle_wheels.right_rear;
+    double *point_despl = &despl_linear.right_rear;
     for (int i = 0; i < 4; i++)
     {
-        vel_w[i] = point_angles[i] / times_wheels;
+        vel_w[i] = point_despl[i] / d_time;
     }
     // Calculo el promedio de las velocidades de las ruedas de cada lado del vehículo
     VelocityWheels velocities = {(vel_w[0] + vel_w[1]) / 2,

@@ -43,7 +43,7 @@ extern "C"
     double integration_riemann(double prev_output_value, double current_value, float d_time);
     double calculate_yaw_imu(DataIMU angular_velocity, double prev_yaw, double d_time);
     double calculate_yaw_wheels(VelocityWheels velocity_wheels, double current_value, double wheels_distance, double d_time);
-    VelocityWheels calculate_velocities_wheels(Wheels angle_wheels, double times_wheels);
+    VelocityWheels calculate_velocities_wheels(Wheels despl_linear, double d_time);
     Position calculate_position_wheels(VelocityWheels v_wheels, Position prev_position, float d_time, float yaw);
     Position calculate_position_imu(DataIMU l_a_imu, DataIMU *prev_vel_imu, Position prev_position, float d_time, float yaw);
     Position get_position_f_c(Position imu_position_estime, Position wheels_position_estime, float gamma, float beta);
