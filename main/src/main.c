@@ -33,19 +33,19 @@ void init_microROS(){
 
 	RCCHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
 
-	RCCHECK(rclc_node_init_default(&node_encoder, "encoder_node", "", &support));
+	RCCHECK(rclc_node_init_default(&esp32_node, "esp32_node", "", &support));
 
 	RCCHECK(rclc_publisher_init_default(
 		&publisher_encoder,
-		&node_encoder,
+		&esp32_node,
 		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
-		"encoder"));
+		"encoders"));
 
-	RCCHECK(rclc_node_init_default(&node_IMU, "IMU_node", "", &support));
+	//RCCHECK(rclc_node_init_default(&node_IMU, "IMU_node", "", &support));
 
 	RCCHECK(rclc_publisher_init_default(
 		&publisher_IMU,
-		&node_IMU,
+		&esp32_node,
 		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
 		"IMU"));
 
