@@ -38,8 +38,7 @@ rcl_init_options_t init_options;
 rmw_init_options_t* rmw_options;
 rcl_publisher_t publisher_encoder;
 rcl_publisher_t publisher_IMU;
-rcl_node_t node_encoder;
-rcl_node_t node_IMU;
+rcl_node_t esp32_node;
 
 mpu6050_handle_t mpu6050 = NULL;
 
