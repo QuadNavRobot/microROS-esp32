@@ -23,6 +23,7 @@
 #include "driver/mcpwm.h"
 #include "driver/spi_slave.h"
 #include "compl_filter_library.h"
+#include "driver/ledc.h"
 
 // Micro-ROS definitions
 #ifdef CONFIG_MICRO_ROS_ESP_XRCE_DDS_MIDDLEWARE
@@ -44,9 +45,9 @@ void TaskPublishDataIMU(void *argument);
 static void i2c_sensor_mpu6050_init(void);
 float convertDegreesToRadians(float value);
 static void IRAM_ATTR isr_handler(void* arg);
-void motor_stop(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, mcpwm_generator_t gen_in1, mcpwm_generator_t gen_in2);
-void motor_forward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
-void motor_backward(mcpwm_unit_t mcpwm_num, mcpwm_timer_t timer_num, float duty_cycle, mcpwm_generator_t gen_low, mcpwm_generator_t gen_pwm);
+void motor_stop();
+void motor_forward(int driver_motor, ledc_channel_t channel, uint32_t dutty);
+void motor_backward(int driver_motor, ledc_channel_t channel, uint32_t dutty);
 void TaskSPI(void *argument);
 void TaskFusion(void *argument);
 void TaskPublishFusion(void *argument);
@@ -73,6 +74,16 @@ QueueHandle_t EstimedQueue;
 #define beta 0.95
 #define gamma 0.99
 
+//ledc_channel_config_t ledc_channel[4];
+
+/*ledc_timer_config_t ledc_timer = {
+	.speed_mode = LEDC_LOW_SPEED_MODE,
+	.duty_resolution = LEDC_TIMER_7_BIT,
+	.timer_num = LEDC_TIMER_0,
+	.freq_hz = 100000,
+	.clk_cfg = LEDC_AUTO_CLK
+};*/
+
 int encoder_pulses_FR = 0; // Cuenta los pulsos del encoder
 int encoder_pulses_FL = 0;
 int encoder_pulses_RR = 0;
@@ -87,3 +98,14 @@ int encoder_pulses_RL = 0;
 #define GPIO_ENCODER_FL 35 // front left wheel
 #define GPIO_ENCODER_RR 32 // rear right wheel
 #define GPIO_ENCODER_RL 33 // rear left wheel
+
+// PWM motor
+#define GPIO_IN1_DM1 15
+#define GPIO_IN2_DM1 2
+#define GPIO_IN1_DM2 27
+#define GPIO_IN2_DM2 13
+
+#define GPIO_ENA_M1 4
+#define GPIO_ENA_M2 16
+#define GPIO_ENA_M3 25
+#define GPIO_ENA_M4 26
