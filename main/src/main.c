@@ -164,8 +164,11 @@ void TaskPublishDataSensors(void *argument){
 
 		if (DEBUG_MODE)
 		{
-			printf("DataIMU Accelerometer - x: %f, y: %f, z:%f.\n", dataIMU->linear_acceleration.x, dataIMU->linear_acceleration.y, dataIMU->linear_acceleration.z);
-			printf("DataIMU Gyroscope - x: %f, y: %f, z:%f.\n", dataIMU->angular_velocity.x, dataIMU->angular_velocity.y, dataIMU->angular_velocity.z);
+			if (PRINT_IMU_DEBUG)
+			{
+				printf("DataIMU Accelerometer - x: %f, y: %f, z:%f.\n", dataIMU->linear_acceleration.x, dataIMU->linear_acceleration.y, dataIMU->linear_acceleration.z);
+				printf("DataIMU Gyroscope - x: %f, y: %f, z:%f.\n", dataIMU->angular_velocity.x, dataIMU->angular_velocity.y, dataIMU->angular_velocity.z);
+			}
 		}else{
 			RCSOFTCHECK(rcl_publish(&publisher_IMU, dataIMU, NULL));
 		}
@@ -177,7 +180,10 @@ void TaskPublishDataSensors(void *argument){
 	angular_velocity.data.data[3] = ((float)encoder_pulses_RL/20)*360;
 
 	if(DEBUG_MODE){
-		printf("DataEncoders - Left front: %f, Left rear: %f, Right front: %f, Right rear: %f.\n", angular_velocity.data.data[0], angular_velocity.data.data[1], angular_velocity.data.data[2], angular_velocity.data.data[3]);
+		if(PRINT_ENCODERS_DEBUG)
+		{
+			printf("DataEncoders - Left front: %f, Left rear: %f, Right front: %f, Right rear: %f.\n", angular_velocity.data.data[0], angular_velocity.data.data[1], angular_velocity.data.data[2], angular_velocity.data.data[3]);
+		}
 	}else {
 		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
 	}
