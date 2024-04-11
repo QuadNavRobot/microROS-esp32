@@ -24,6 +24,11 @@
 #define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Aborting.\n",__LINE__,(int)temp_rc);vTaskDelete(NULL);}}
 #define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){printf("Failed status on line %d: %d. Continuing.\n",__LINE__,(int)temp_rc);}}
 
+// Debug definitions
+#define DEBUG_MODE 1
+#define PRINT_IMU_DEBUG 1 //Only if DEBUG_MODE = 1
+#define PRINT_ENCODERS_DEBUG 1 //Only if DEBUG_MODE = 1
+
 // SPI pins
 #define GPIO_MOSI 12  // 38 vision bonnet
 #define GPIO_SCLK 15  // 40 vision bonnet
