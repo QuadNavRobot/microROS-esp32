@@ -81,7 +81,7 @@ void FreeRTOS_Init(){
 
 	xTaskCreate(TaskPWM,
 		"Task PWM",
-		2500,
+		2100,
 		NULL,
 		1,
 		NULL);
@@ -183,12 +183,6 @@ void TaskPWM(void *argument){
 	 PWM_config();
 	
 	for(;;){
-		// printf("dutty forward: 64\n");
-		// motor_forward(LEDC_CHANNEL_0, 64);
-		// motor_forward(LEDC_CHANNEL_1, 64);
-		// motor_forward(LEDC_CHANNEL_2, 64);
-		// motor_forward(LEDC_CHANNEL_3, 64);
-		// vTaskDelay(500);
 
 		printf("dutty forward: 50 \n");
 		motor_forward(LEDC_CHANNEL_0, 64);
@@ -197,20 +191,13 @@ void TaskPWM(void *argument){
 		motor_forward(LEDC_CHANNEL_3, 64);
 		vTaskDelay(500);
 
-		// printf("dutty forward: 0\n");
-		// motor_forward(LEDC_CHANNEL_0, 0);
-		// motor_forward(LEDC_CHANNEL_1, 0);
-		// motor_forward(LEDC_CHANNEL_2, 0);
-		// motor_forward(LEDC_CHANNEL_3, 0);
-		// vTaskDelay(500);
- 
 		 printf("dutty backward: 50 \n");
 		 motor_backward(LEDC_CHANNEL_0, 64);
 		 motor_backward(LEDC_CHANNEL_1, 64);
 		 motor_backward(LEDC_CHANNEL_2, 64);
 		 motor_backward(LEDC_CHANNEL_3, 64);
 		
-		//printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
+		printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
 		vTaskDelay(500);
 	}
 }
