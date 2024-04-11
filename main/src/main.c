@@ -69,7 +69,7 @@ void FreeRTOS_Init(){
 		"Read IMU",
 		2000,
 		NULL,
-		1,
+		2,
 		NULL);
 
 	xTaskCreate(TaskPublishDataSensors,
@@ -81,7 +81,7 @@ void FreeRTOS_Init(){
 
 	xTaskCreate(TaskPWM,
 		"Task PWM",
-		2100,
+		2500,
 		NULL,
 		1,
 		NULL);
@@ -180,16 +180,38 @@ void TaskPublishDataSensors(void *argument){
 */
 void TaskPWM(void *argument){
 	
-	PWM_config();
+	 PWM_config();
 	
 	for(;;){
-	
-		motor_forward(1,LEDC_CHANNEL_0, 64);
-		motor_forward(1,LEDC_CHANNEL_1, 64);
-		motor_forward(2,LEDC_CHANNEL_2, 64);
-		motor_forward(2,LEDC_CHANNEL_3, 64);
+		// printf("dutty forward: 64\n");
+		// motor_forward(LEDC_CHANNEL_0, 64);
+		// motor_forward(LEDC_CHANNEL_1, 64);
+		// motor_forward(LEDC_CHANNEL_2, 64);
+		// motor_forward(LEDC_CHANNEL_3, 64);
+		// vTaskDelay(500);
+
+		printf("dutty forward: 50 \n");
+		motor_forward(LEDC_CHANNEL_0, 64);
+		motor_forward(LEDC_CHANNEL_1, 64);
+		motor_forward(LEDC_CHANNEL_2, 64);
+		motor_forward(LEDC_CHANNEL_3, 64);
+		vTaskDelay(500);
+
+		// printf("dutty forward: 0\n");
+		// motor_forward(LEDC_CHANNEL_0, 0);
+		// motor_forward(LEDC_CHANNEL_1, 0);
+		// motor_forward(LEDC_CHANNEL_2, 0);
+		// motor_forward(LEDC_CHANNEL_3, 0);
+		// vTaskDelay(500);
+ 
+		 printf("dutty backward: 50 \n");
+		 motor_backward(LEDC_CHANNEL_0, 64);
+		 motor_backward(LEDC_CHANNEL_1, 64);
+		 motor_backward(LEDC_CHANNEL_2, 64);
+		 motor_backward(LEDC_CHANNEL_3, 64);
+		
 		//printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
-		vTaskDelay(100);
+		vTaskDelay(500);
 	}
 }
 
