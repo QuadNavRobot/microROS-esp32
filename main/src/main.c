@@ -108,21 +108,14 @@ void FreeRTOS_Init(){
 		2048,
 		NULL,
 		tskIDLE_PRIORITY+1,
-		NULL);
+		NULL);*/
 
 	xTaskCreate(TaskFusion,
 		"Task fusion sensorial",
-		2048,
+		2500,
 		NULL,
-		tskIDLE_PRIORITY+1,
+		1,
 		NULL);
-
-	xTaskCreate(TaskPublishFusion,
-		"Task etimationp",
-		2048,
-		NULL,
-		tskIDLE_PRIORITY+1,
-		NULL);*/
 }
 
 /**
@@ -140,17 +133,19 @@ void TaskReadDataIMU(void *argument){
 
     ret = mpu6050_get_deviceid(mpu6050, &mpu6050_deviceid);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
+	ret = mpu6050_calibrate(mpu6050);
+	TEST_ASSERT_EQUAL(ESP_OK, ret);
 	
 	while(1){
 		//printf("Stack free - READ: %d \n",uxTaskGetStackHighWaterMark(NULL));
-		ret = mpu6050_get_acce(mpu6050, &acce);
+		ret = mpu6050_get_acce_cal(mpu6050, &acce);
 		TEST_ASSERT_EQUAL(ESP_OK, ret);
 
 		values[0] = acce.acce_x;
 		values[1] = acce.acce_y;
 		values[2] = acce.acce_z;
 
-		ret = mpu6050_get_gyro(mpu6050, &gyro);
+		ret = mpu6050_get_gyro_cal(mpu6050, &gyro);
     	TEST_ASSERT_EQUAL(ESP_OK, ret);
 		
 		values[3] = gyro.gyro_x;
@@ -175,24 +170,30 @@ void TaskReadDataIMU(void *argument){
  */
 void TaskPublishDataSensors(void *argument){
 
-	float values[6];
+	float raw_imu_values[6];
+	float filter_estimates[3];
 	sensor_msgs__msg__Imu *dataIMU = sensor_msgs__msg__Imu__create();
     std_msgs__msg__Float32MultiArray angular_velocity;
 	std_msgs__msg__Float32MultiArray__init (&angular_velocity);
 	angular_velocity.data.data = malloc(sizeof(float)*4);
 	angular_velocity.data.capacity = 4;
 	angular_velocity.data.size = 4; 
+	std_msgs__msg__Float32MultiArray pose_estimate;
+	std_msgs__msg__Float32MultiArray__init(&pose_estimate);
+	pose_estimate.data.data = malloc(sizeof(float) * 3);
+	pose_estimate.data.capacity = 3;
+	pose_estimate.data.size = 3;
 
 	while(1){
+	//IMU
+    if(xQueueReceive(IMUPublishValuesQueue, raw_imu_values, portMAX_DELAY) == pdTRUE){ //Get the data from the queue
+		dataIMU->linear_acceleration.x = convertGToMS2(raw_imu_values[0]);
+		dataIMU->linear_acceleration.y = convertGToMS2(raw_imu_values[1]);
+		dataIMU->linear_acceleration.z = convertGToMS2(raw_imu_values[2]);
 
-    if(xQueueReceive(IMUPublishValuesQueue, values, portMAX_DELAY) == pdTRUE){ //Get the data from the queue
-		dataIMU->linear_acceleration.x = convertGToMS2(values[0]);
-		dataIMU->linear_acceleration.y = convertGToMS2(values[1]);
-		dataIMU->linear_acceleration.z = convertGToMS2(values[2]);
-
-		dataIMU->angular_velocity.x = convertDegreesToRadians(values[3]);
-		dataIMU->angular_velocity.y = convertDegreesToRadians(values[4]);
-		dataIMU->angular_velocity.z = convertDegreesToRadians(values[5]);
+		dataIMU->angular_velocity.x = convertDegreesToRadians(raw_imu_values[3]);
+		dataIMU->angular_velocity.y = convertDegreesToRadians(raw_imu_values[4]);
+		dataIMU->angular_velocity.z = convertDegreesToRadians(raw_imu_values[5]);
 
 		if (DEBUG_MODE)
 		{
@@ -206,6 +207,7 @@ void TaskPublishDataSensors(void *argument){
 		}
 
 	}
+	//Encoders
 	angular_velocity.data.data[0] = ((float)encoder_pulses_FL/20)*360;
 	angular_velocity.data.data[1] = ((float)encoder_pulses_FR/20)*360;
 	angular_velocity.data.data[2] = ((float)encoder_pulses_RR/20)*360;
@@ -219,8 +221,24 @@ void TaskPublishDataSensors(void *argument){
 	}else {
 		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
 	}
-	
-		vTaskDelay(pdMS_TO_TICKS(100));
+
+	//Filter
+	if(xQueueReceive(EstimedQueue, filter_estimates, portMAX_DELAY) == pdTRUE){
+
+		pose_estimate.data.data[0] = filter_estimates[0];
+		pose_estimate.data.data[1] =  filter_estimates[1];
+		pose_estimate.data.data[2] =  filter_estimates[2];
+
+		if (DEBUG_MODE)
+		{
+			if (PRINT_FILTER_DEBUG)
+			{
+				printf("FilterComplementary - pos_x: %f, pos_y: %f, or_yaw: %f.\n", pose_estimate.data.data[1], pose_estimate.data.data[2], pose_estimate.data.data[0]);
+			}
+		}else{
+			RCSOFTCHECK(rcl_publish(&publisher_pose, &pose_estimate, NULL));
+		}
+  	}
 	}
 }
 
@@ -278,87 +296,93 @@ void TaskFusion(void *argument){
   	msg.data.capacity = 3;
   	msg.data.size = 3;
 
-  	float values[6]; // Array to store the values read from the queue
+  	float values_output[3]; 
+	float values[6]; // Array to store the values read from the queue
 
-  	float v_yaw_fusion = 0.0;
-  	Position v_position_fusion = {0.0, 0.0};
-  	DataIMU prev_velocity_imu = {0.0, 0.0, 0.0};
+  	float yaw = 0.0;
+	float prev_yaw = 0.0;
+  	Position position = {0.0, 0.0};
+	Position prev_position = {0.0, 0.0};
 
-  	uint32_t current_time;
-  	uint32_t prev_time = (uint32_t) xTaskGetTickCount();
+	DataIMU prev_velocities_imu = {0, 0, 0};
 
-	static float d_t_imu = 1.0;
+	static float dt = 0.1;
+
+	// int encoder_pulses_FR_count = 0;
+	// int encoder_pulses_FL_count = 0;
+	// int encoder_pulses_RL_count = 0;
+	// int encoder_pulses_RR_count = 0;
 
 	while (1){
 		if(xQueueReceive(IMUValuesQueue, values, portMAX_DELAY) == pdTRUE){ //Get the data from the queue
-			current_time = (uint32_t) xTaskGetTickCount();
-        	float ticks_time = (float)(current_time - prev_time);//Cada tick es 1ms
-        	float dt = ticks_time / 1000;
 
-			Wheels despl_linear = { 
-					(encoder_pulses_RR/20) * 6.5,
-					(encoder_pulses_FR/20) * 6.5,
-					(encoder_pulses_RL/20) * 6.5,
-					(encoder_pulses_FL/20) * 6.5};
+			// CALCULO CON LAS RUEDAS ------------------------------------------
+
+			// Wheels despl_linear;
+			// despl_linear.right_rear = ((float)encoder_pulses_RR/20) * 3.14 * 0.065;
+			// despl_linear.right_front = ((float)encoder_pulses_FR/20) * 3.14 * 0.065;
+			// despl_linear.left_rear = ((float)encoder_pulses_RL/20) * 3.14 * 0.065;
+			// despl_linear.left_front = ((float)encoder_pulses_FL/20) * 3.14 * 0.065;
+
+			// // printf("Datos de encoders- right_rear: %d, right_front:%d, left_rear:%d, left_front: %d.\n", encoder_pulses_RR,  encoder_pulses_FR,  encoder_pulses_RL, encoder_pulses_FL);
+			// // printf("Datos de desplazamient lineal - right_rear: %f, right_front:%f, left_rear:%f, left_front: %f.\n", despl_linear.right_rear,  despl_linear.right_front,  despl_linear.left_rear, despl_linear.left_front);
 			
-			//Reinicio el contador de las ruedas
-			encoder_pulses_FR = 0;
-			encoder_pulses_FL = 0;
-			encoder_pulses_RL = 0;
-			encoder_pulses_RR = 0;
+			// encoder_pulses_FR_count += encoder_pulses_FR;
+			// encoder_pulses_FL_count += encoder_pulses_FL;
+			// encoder_pulses_RL_count += encoder_pulses_RL;
+			// encoder_pulses_RR_count += encoder_pulses_RR;
 
-			VelocityWheels vel_wheels = calculate_velocities_wheels(despl_linear, dt);
+			// printf("Datos de encoders- right_rear: %d, right_front:%d, left_rear:%d, left_front: %d.\n",encoder_pulses_RR_count, encoder_pulses_FR_count,  encoder_pulses_RL_count, encoder_pulses_FL_count);
 
-			DataIMU linear_aceleration = {values[0],
-										  values[1],
-										  values[2]};
+			// //Reinicio el contador de las ruedas
+			// encoder_pulses_FR = 0;
+			// encoder_pulses_FL = 0;
+			// encoder_pulses_RL = 0;
+			// encoder_pulses_RR = 0;
 
-			DataIMU angular_velocity = {convertDegreesToRadians(values[3]),
-										convertDegreesToRadians(values[4]),
-										convertDegreesToRadians(values[5])};
+			// VelocityWheels vel_wheels = calculate_velocities_wheels(despl_linear, dt);
+			// // printf("Velocidades - izquierda: %f, derecha: %f.\n", vel_wheels.left_wheels, vel_wheels.right_wheels);
 
-			//Estimaciones de yaw.
-			float wheels_yaw_estimed = calculate_yaw_wheels(vel_wheels, v_yaw_fusion, 0.13, dt);
-			float imu_yaw_estimed = calculate_yaw_imu(angular_velocity, v_yaw_fusion, d_t_imu);
+			// //Estimaciones de yaw.
+			// yaw = calculate_yaw_wheels(vel_wheels, yaw, 0.13, dt);
 
-			v_yaw_fusion = get_orientation_f_c(imu_yaw_estimed, wheels_yaw_estimed, alpha);
+			// //Estimaciones de las posiciones.
+			// position = calculate_position_wheels(vel_wheels, position, dt, yaw);
+			// ------------------------------------------------------------------------------
 
-			//Estimaciones de las posiciones.
-			Position position_wheels_estime = calculate_position_wheels(vel_wheels, v_position_fusion, dt, v_yaw_fusion);
-			Position position_imu_estime = calculate_position_imu(linear_aceleration, &prev_velocity_imu, v_position_fusion, d_t_imu, v_yaw_fusion);
 
-			Position position_fusion = get_position_f_c(position_imu_estime, position_wheels_estime, gamma, beta);
-			v_position_fusion = position_fusion;
+			// CALCULO CON IMU  ------------------------------------------
 
-			prev_time = current_time;
+			// printf("Datos de IMU linear acceleration - x: %f, y: %f, z: %f.\n", values[0], values[1], values[2]);
+			// printf("Datos de IMU angular velocities - x: %f, y: %f, z: %f.\n", values[3], values[4], values[5]);
 
-			values[0] = v_position_fusion.x;
-			values[1] = v_position_fusion.y;
-			values[2] = v_yaw_fusion;
+			DataIMU linear_acceleration = {
+				convertGToMS2(values[0]),
+				convertGToMS2(values[1]),
+				convertGToMS2(values[2])
+			};
 
-	    	if (xQueueSend(EstimedQueue, &values, portMAX_DELAY) != pdPASS) {
-	    		printf("ERROR: full queue.\n");
-	    	}
+			DataIMU angular_velocities = {
+				convertDegreesToRadians(values[3]),
+				convertDegreesToRadians(values[4]),
+				convertDegreesToRadians(values[5])
+			};
+
+			yaw = calculate_yaw_imu(angular_velocities, prev_yaw, dt);
+			prev_yaw = yaw;
+
+			position = calculate_position_imu(linear_acceleration, &prev_velocities_imu, prev_position, dt, yaw);
+			prev_position = position;
+			// ------------------------------------------------------------------------------
+
+			values_output[0] = position.x;
+			values_output[1] = position.y;
+			values_output[2] = yaw;
+			printf("Calculos realizados - x: %f, y:%f, yaw:%f.\n", values_output[0],  values_output[1],  values_output[2]);
+
+	    	// if (xQueueSend(EstimedQueue, &values_output, portMAX_DELAY) != pdPASS) {
+	    	// 	printf("ERROR: full queue.\n");
+	    	// }
 		}
-	}
-}
-
-void TaskPublishFusion(void *argument){
-	float values[3];
-
-	std_msgs__msg__Float32MultiArray msg;
-	std_msgs__msg__Float32MultiArray__init(&msg);
-	msg.data.data = malloc(sizeof(float) * 3);
-	msg.data.capacity = 3;
-	msg.data.size = 3;
-
-	while(1){
-    	if(xQueueReceive(EstimedQueue, values, portMAX_DELAY) == pdTRUE){
-
-			msg.data.data[0] = values[0];
-			msg.data.data[1] =  values[1];
-			msg.data.data[2] =  values[2];
-		    RCSOFTCHECK(rcl_publish(&publisher_pose, &msg, NULL));
-  		}
 	}
 }

@@ -29,6 +29,7 @@
 #define DEBUG_MODE 1
 #define PRINT_IMU_DEBUG 1 //Only if DEBUG_MODE = 1
 #define PRINT_ENCODERS_DEBUG 1 //Only if DEBUG_MODE = 1
+#define PRINT_FILTER_DEBUG 1//Only if DEBUG_MODE = 1
 
 // SPI pins
 #define GPIO_MOSI 12  // 38 vision bonnet
@@ -67,5 +68,6 @@ void init_microROS();
 void FreeRTOS_Init();
 void TaskPublishDataSensors(void *argument);
 void TaskReadDataIMU(void *argument);
+void TaskFusion(void *argument);
 //void TaskPWM(void *argument);
 //void TaskSPI(void *argument);
