@@ -1,8 +1,10 @@
 #include "../inc/main.h"
 
 void app_main(void){
-
-	init_microROS();
+	if (!DEBUG_MODE)
+	{
+		init_microROS();
+	}
 
 	init_encoder();
 
@@ -192,17 +194,32 @@ void TaskPublishDataSensors(void *argument){
 		dataIMU->angular_velocity.y = convertDegreesToRadians(values[4]);
 		dataIMU->angular_velocity.z = convertDegreesToRadians(values[5]);
 
-		RCSOFTCHECK(rcl_publish(&publisher_IMU, dataIMU, NULL));
-
+		if (DEBUG_MODE)
+		{
+			if (PRINT_IMU_DEBUG)
+			{
+				printf("DataIMU Accelerometer - x: %f, y: %f, z:%f.\n", dataIMU->linear_acceleration.x, dataIMU->linear_acceleration.y, dataIMU->linear_acceleration.z);
+				printf("DataIMU Gyroscope - x: %f, y: %f, z:%f.\n", dataIMU->angular_velocity.x, dataIMU->angular_velocity.y, dataIMU->angular_velocity.z);
+			}
+		}else{
+			RCSOFTCHECK(rcl_publish(&publisher_IMU, dataIMU, NULL));
+		}
 
 	}
-		angular_velocity.data.data[0] = ((float)encoder_pulses_FL/20)*360;
-		angular_velocity.data.data[1] = ((float)encoder_pulses_FR/20)*360;
-		angular_velocity.data.data[2] = ((float)encoder_pulses_RR/20)*360;
-		angular_velocity.data.data[3] = ((float)encoder_pulses_RL/20)*360;
-		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
-		
+	angular_velocity.data.data[0] = ((float)encoder_pulses_FL/20)*360;
+	angular_velocity.data.data[1] = ((float)encoder_pulses_FR/20)*360;
+	angular_velocity.data.data[2] = ((float)encoder_pulses_RR/20)*360;
+	angular_velocity.data.data[3] = ((float)encoder_pulses_RL/20)*360;
 
+	if(DEBUG_MODE){
+		if(PRINT_ENCODERS_DEBUG)
+		{
+			printf("DataEncoders - Left front: %f, Left rear: %f, Right front: %f, Right rear: %f.\n", angular_velocity.data.data[0], angular_velocity.data.data[1], angular_velocity.data.data[2], angular_velocity.data.data[3]);
+		}
+	}else {
+		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
+	}
+	
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
