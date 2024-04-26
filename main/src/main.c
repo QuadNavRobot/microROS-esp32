@@ -71,7 +71,7 @@ void FreeRTOS_Init(){
 		"Read IMU",
 		2000,
 		NULL,
-		1,
+		2,
 		NULL);
 
 	xTaskCreate(TaskPublishDataSensors,
@@ -197,16 +197,28 @@ void TaskPublishDataSensors(void *argument){
 */
 void TaskPWM(void *argument){
 	
-	PWM_config();
+	 PWM_config();
+	
+	//APAGADOS
+	motor_forward(CHANNEL_RR, 0);
+	motor_forward(CHANNEL_FR, 0);
+	motor_forward(CHANNEL_FL, 0);
+	motor_forward(CHANNEL_RL, 0);
 	
 	for(;;){
-	
-		motor_forward(1,LEDC_CHANNEL_0, 64);
-		motor_forward(1,LEDC_CHANNEL_1, 64);
-		motor_forward(2,LEDC_CHANNEL_2, 64);
-		motor_forward(2,LEDC_CHANNEL_3, 64);
-		//printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
-		vTaskDelay(100);
+		//AL 50%
+		motor_forward(CHANNEL_RR, 50);
+		motor_forward(CHANNEL_FR, 50);
+		motor_forward(CHANNEL_FL, 50);
+		motor_forward(CHANNEL_RL, 50);
+
+		vTaskDelay(500);
+		motor_backward(CHANNEL_RR, 50);
+		motor_backward(CHANNEL_FR, 50);
+		motor_backward(CHANNEL_FL, 50);
+		motor_backward(CHANNEL_RL, 50);
+		printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
+		vTaskDelay(500);
 	}
 }
 
