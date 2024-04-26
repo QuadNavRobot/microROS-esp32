@@ -199,21 +199,24 @@ void TaskPWM(void *argument){
 	
 	 PWM_config();
 	
+	//APAGADOS
+	motor_forward(CHANNEL_RR, 0);
+	motor_forward(CHANNEL_FR, 0);
+	motor_forward(CHANNEL_FL, 0);
+	motor_forward(CHANNEL_RL, 0);
+	
 	for(;;){
+		//AL 50%
+		motor_forward(CHANNEL_RR, 50);
+		motor_forward(CHANNEL_FR, 50);
+		motor_forward(CHANNEL_FL, 50);
+		motor_forward(CHANNEL_RL, 50);
 
-		printf("dutty forward: 50 \n");
-		motor_forward(LEDC_CHANNEL_0, 64);
-		motor_forward(LEDC_CHANNEL_1, 64);
-		motor_forward(LEDC_CHANNEL_2, 64);
-		motor_forward(LEDC_CHANNEL_3, 64);
 		vTaskDelay(500);
-
-		 printf("dutty backward: 50 \n");
-		 motor_backward(LEDC_CHANNEL_0, 64);
-		 motor_backward(LEDC_CHANNEL_1, 64);
-		 motor_backward(LEDC_CHANNEL_2, 64);
-		 motor_backward(LEDC_CHANNEL_3, 64);
-		
+		motor_backward(CHANNEL_RR, 50);
+		motor_backward(CHANNEL_FR, 50);
+		motor_backward(CHANNEL_FL, 50);
+		motor_backward(CHANNEL_RL, 50);
 		printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
 		vTaskDelay(500);
 	}
