@@ -181,7 +181,7 @@ void TaskPublishDataSensors(void *argument){
 
 	if(DEBUG_MODE){
 		if(PRINT_ENCODERS_DEBUG)
-		{
+		{	
 			printf("DataEncoders - Left front: %f, Left rear: %f, Right front: %f, Right rear: %f.\n", angular_velocity.data.data[0], angular_velocity.data.data[1], angular_velocity.data.data[2], angular_velocity.data.data[3]);
 		}
 	}else {
@@ -207,16 +207,17 @@ void TaskPWM(void *argument){
 	
 	for(;;){
 		//AL 50%
-		motor_forward(CHANNEL_RR, 50);
-		motor_forward(CHANNEL_FR, 50);
-		motor_forward(CHANNEL_FL, 50);
-		motor_forward(CHANNEL_RL, 50);
-
-		vTaskDelay(500);
-		motor_backward(CHANNEL_RR, 50);
-		motor_backward(CHANNEL_FR, 50);
-		motor_backward(CHANNEL_FL, 50);
-		motor_backward(CHANNEL_RL, 50);
+		encoder_pulses_RL = 0;
+		motor_forward(CHANNEL_RR, 30);
+		motor_forward(CHANNEL_FR, 30);
+		motor_forward(CHANNEL_FL, 30);
+		motor_forward(CHANNEL_RL, 30);
+		vTaskDelay(36);
+		
+		motor_backward(CHANNEL_RR, 0);
+		motor_backward(CHANNEL_FR, 0);
+		motor_backward(CHANNEL_FL, 0);
+		motor_backward(CHANNEL_RL, 0);
 		printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
 		vTaskDelay(500);
 	}

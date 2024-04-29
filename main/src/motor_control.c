@@ -10,7 +10,7 @@ void PWM_config(){
 	.speed_mode = LEDC_HIGH_SPEED_MODE,
 	.duty_resolution = LEDC_TIMER_7_BIT,
 	.timer_num = LEDC_TIMER_0,
-	.freq_hz = 100000,
+	.freq_hz = 20000,
 	.clk_cfg = LEDC_AUTO_CLK
 	};
 

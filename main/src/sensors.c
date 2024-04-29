@@ -31,17 +31,23 @@ void init_encoder(){
 /**
  * @brief ISR of encoder interrupts
  */
+
 void IRAM_ATTR encoder_isr_handler(void* arg){
 	uint32_t gpio_num = (uint32_t) arg;
-	
-	if(gpio_num == GPIO_ENCODER_FL){
+	total_ticks = xTaskGetTickCount();
+
+	if((gpio_num == GPIO_ENCODER_FL) && ((total_ticks - ticks_FL) >= 3)){
 		encoder_pulses_FL++;
-	}else if(gpio_num == GPIO_ENCODER_FR){
+		ticks_FL = total_ticks;
+	}else if((gpio_num == GPIO_ENCODER_FR) && ((total_ticks - ticks_FR) >= 3)){
 		encoder_pulses_FR++;
-	}else if(gpio_num == GPIO_ENCODER_RR){
+		ticks_FR = total_ticks;
+	}else if((gpio_num == GPIO_ENCODER_RR) && ((total_ticks - ticks_RR) >= 3)){
 		encoder_pulses_RR++;
-	}else{
+		ticks_RR = total_ticks;
+	}else if((gpio_num == GPIO_ENCODER_RL) && ((total_ticks - ticks_RL) >= 3)){
 		encoder_pulses_RL++;
+		ticks_RL = total_ticks;
 	}
 }
 
@@ -65,7 +71,7 @@ mpu6050_handle_t i2c_sensor_mpu6050_init(void){
 
     return mpu6050;
 }
-
+	
 /**
  * @brief Configure I2C for MPU6050
  * @return esp_err_t 
