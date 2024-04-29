@@ -63,6 +63,12 @@ int encoder_pulses_FL = 0;
 int encoder_pulses_RR = 0;
 int encoder_pulses_RL = 0;
 
+TickType_t total_ticks;
+int ticks_FL;
+int ticks_FR;
+int ticks_RR;
+int ticks_RL;
+
 // Functions
 void init_microROS();
 void FreeRTOS_Init();
