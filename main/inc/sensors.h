@@ -21,6 +21,12 @@ extern int encoder_pulses_RL;
 
 extern mpu6050_handle_t mpu6050;
 
+extern TickType_t total_ticks;
+extern int ticks_FL;
+extern int ticks_FR;
+extern int ticks_RR;
+extern int ticks_RL;
+
 void init_encoder();
 void IRAM_ATTR encoder_isr_handler(void* arg);
 esp_err_t i2c_Init();
