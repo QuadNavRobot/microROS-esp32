@@ -1,4 +1,5 @@
 #include <math.h>
+#include <utils.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -42,12 +43,13 @@ extern "C"
     double integration_trapezoidal_rule(double prev_output_value, double current_value, double prev_value, float d_time);
     double integration_riemann(double prev_output_value, double current_value, float d_time);
     double calculate_yaw_imu(DataIMU angular_velocity, double prev_yaw, double d_time);
-    double calculate_yaw_wheels(VelocityWheels velocity_wheels, double current_value, double wheels_distance, double d_time);
+    double calculate_yaw_wheels(VelocityWheels velocity_wheels, double prev_yaw, double wheels_distance, double d_time);
     VelocityWheels calculate_velocities_wheels(Wheels despl_linear, double d_time);
     Position calculate_position_wheels(VelocityWheels v_wheels, Position prev_position, float d_time, float yaw);
     Position calculate_position_imu(DataIMU l_a_imu, DataIMU *prev_vel_imu, Position prev_position, float d_time, float yaw);
     Position get_position_f_c(Position imu_position_estime, Position wheels_position_estime, float gamma, float beta);
     double get_orientation_f_c(double imu_orientation_estime, double wheels_orientation_estime, float alpha);
+    void get_data_sensors(int *encoders_pulses, float *imu_values,VelocityWheels *vel_wheels, DataIMU *linear_acceleration, DataIMU *angular_velocities, float d_time);
 
 #ifdef __cplusplus
 }

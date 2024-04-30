@@ -46,16 +46,16 @@ double calculate_yaw_imu(DataIMU angular_velocity, double prev_yaw, double d_tim
 /**
  * @brief Calculo de la estimación del angulo yaw, formado sobre el plano x,y, con los datos de las velocidades de las ruedas.
  * @param v_wheels Velocidades lineales estimadas de las ruedas.
- * @param current_value Estimación actual del angulo yaw.
+ * @param prev_yaw Estimación previa de yaw.
  * @param wheels_distance Distancia entre las ruedas derechas e izquerdas.
  * @param d_time Tiempo transcurrido desde el último dato obtenido.
  * @return Estimación del ángulo, yaw, formado sobre el plano x,y.
  */
-double calculate_yaw_wheels(VelocityWheels velocity_wheels, double current_value, double wheels_distance, double d_time)
+double calculate_yaw_wheels(VelocityWheels velocity_wheels, double prev_yaw, double wheels_distance, double d_time)
 {
     float despl_angular = (velocity_wheels.right_wheels - velocity_wheels.left_wheels) / wheels_distance;
 
-    return integration_riemann(current_value, despl_angular, d_time);
+    return integration_riemann(prev_yaw, despl_angular, d_time);
 }
 
 /**
@@ -163,4 +163,31 @@ double get_orientation_f_c(double imu_orientation_estime,
     orientation = wheels_orientation_estime * alpha + imu_orientation_estime * (1 - alpha);
 
     return orientation;
+}
+
+/**
+ * @brief Obtención de los datos necesarios para realizar las estimaciones.
+ * @param encoders_pulses Arreglo con la cantidad de pulsos realizados desde la ultima medició, el orden del arreglo debe ser: [FR, FL, RL, RR].
+ * @param imu_values Arreglo con los datos obtenidos de la IMU en crudo.
+ * @param vel_wheels Estructura donde se guardará la velocidades de las ruedas.
+ * @param linear_acceleration Estructura donde se guardará las aceleraciones lineales en m/s².
+ * @param angular_velocities Estructura donde se guardará las velocidades angulares en rad/s.
+ * @param d_time Tiempo transcurrido desde la estimación anterior a la actual.
+*/
+void get_data_sensors(int *encoders_pulses, float *imu_values,VelocityWheels *vel_wheels, DataIMU *linear_acceleration, DataIMU *angular_velocities, float d_time){
+    Wheels despl_linear;
+			despl_linear.right_rear = ((float)encoders_pulses[0]/20) * 3.14 * 0.065;
+			despl_linear.right_front = ((float)encoders_pulses[1]/20) * 3.14 * 0.065;
+			despl_linear.left_rear = ((float)encoders_pulses[2]/20) * 3.14 * 0.065;
+			despl_linear.left_front = ((float)encoders_pulses[3]/20) * 3.14 * 0.065;
+
+    *vel_wheels = calculate_velocities_wheels(despl_linear, d_time);
+
+    linear_acceleration->x = convertGToMS2(imu_values[0]);
+	linear_acceleration->y = convertGToMS2(imu_values[1]);
+	linear_acceleration->z = convertGToMS2(imu_values[2]);
+	
+    angular_velocities->x = convertDegreesToRadians(imu_values[3]);
+    angular_velocities->y = convertDegreesToRadians(imu_values[4]);
+    angular_velocities->z = convertDegreesToRadians(imu_values[5]);
 }

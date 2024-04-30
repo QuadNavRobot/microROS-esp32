@@ -303,99 +303,52 @@ void TaskPWM(void *argument){
 }*/
 
 void TaskFusion(void *argument){
-	std_msgs__msg__Float32MultiArray msg;
-  	std_msgs__msg__Float32MultiArray__init(&msg);
-  	msg.data.data = malloc(sizeof(float) * 3);
-  	msg.data.capacity = 3;
-  	msg.data.size = 3;
-
   	float values_output[3]; 
 	float values[6]; // Array to store the values read from the queue
 
-  	float yaw = 0.0;
 	float prev_yaw = 0.0;
-  	Position position = {0.0, 0.0};
 	Position prev_position = {0.0, 0.0};
-
 	DataIMU prev_velocities_imu = {0, 0, 0};
+	int encoders_pulses[4] = {0, 0, 0, 0};
 
 	static float dt = 0.1;
-
-	// int encoder_pulses_FR_count = 0;
-	// int encoder_pulses_FL_count = 0;
-	// int encoder_pulses_RL_count = 0;
-	// int encoder_pulses_RR_count = 0;
 
 	while (1){
 		if(xQueueReceive(IMUValuesQueue, values, portMAX_DELAY) == pdTRUE){ //Get the data from the queue
 
-			// CALCULO CON LAS RUEDAS ------------------------------------------
+			int encoders_pulses[] = {encoder_pulses_FR, encoder_pulses_FL, encoder_pulses_RL, encoder_pulses_RR};
+			VelocityWheels vel_wheels;
+			DataIMU linear_acceleration;
+			DataIMU angular_velocities;
 
-			// Wheels despl_linear;
-			// despl_linear.right_rear = ((float)encoder_pulses_RR/20) * 3.14 * 0.065;
-			// despl_linear.right_front = ((float)encoder_pulses_FR/20) * 3.14 * 0.065;
-			// despl_linear.left_rear = ((float)encoder_pulses_RL/20) * 3.14 * 0.065;
-			// despl_linear.left_front = ((float)encoder_pulses_FL/20) * 3.14 * 0.065;
+			get_data_sensors(encoders_pulses, values, &vel_wheels, &linear_acceleration, &angular_velocities, dt);
 
-			// // printf("Datos de encoders- right_rear: %d, right_front:%d, left_rear:%d, left_front: %d.\n", encoder_pulses_RR,  encoder_pulses_FR,  encoder_pulses_RL, encoder_pulses_FL);
-			// // printf("Datos de desplazamient lineal - right_rear: %f, right_front:%f, left_rear:%f, left_front: %f.\n", despl_linear.right_rear,  despl_linear.right_front,  despl_linear.left_rear, despl_linear.left_front);
+			encoder_pulses_FR = 0;
+			encoder_pulses_FL = 0;
+			encoder_pulses_RL = 0;
+			encoder_pulses_RR = 0;
+
+			//Orientation
+			float wheels_yaw_estimate = calculate_yaw_wheels(vel_wheels, prev_yaw, 0.13, dt);
+			float imu_yaw_estimate = calculate_yaw_imu(angular_velocities, prev_yaw, dt);
 			
-			// encoder_pulses_FR_count += encoder_pulses_FR;
-			// encoder_pulses_FL_count += encoder_pulses_FL;
-			// encoder_pulses_RL_count += encoder_pulses_RL;
-			// encoder_pulses_RR_count += encoder_pulses_RR;
+			float yaw = get_orientation_f_c(imu_yaw_estimate, wheels_yaw_estimate, alpha);
 
-			// printf("Datos de encoders- right_rear: %d, right_front:%d, left_rear:%d, left_front: %d.\n",encoder_pulses_RR_count, encoder_pulses_FR_count,  encoder_pulses_RL_count, encoder_pulses_FL_count);
+			//Position
+			Position wheels_position_estimate = calculate_position_wheels(vel_wheels, prev_position, dt, yaw);
+			Position imu_position_estimate = calculate_position_imu(linear_acceleration, &prev_velocities_imu, prev_position, dt, yaw);
 
-			// //Reinicio el contador de las ruedas
-			// encoder_pulses_FR = 0;
-			// encoder_pulses_FL = 0;
-			// encoder_pulses_RL = 0;
-			// encoder_pulses_RR = 0;
-
-			// VelocityWheels vel_wheels = calculate_velocities_wheels(despl_linear, dt);
-			// // printf("Velocidades - izquierda: %f, derecha: %f.\n", vel_wheels.left_wheels, vel_wheels.right_wheels);
-
-			// //Estimaciones de yaw.
-			// yaw = calculate_yaw_wheels(vel_wheels, yaw, 0.13, dt);
-
-			// //Estimaciones de las posiciones.
-			// position = calculate_position_wheels(vel_wheels, position, dt, yaw);
-			// ------------------------------------------------------------------------------
-
-
-			// CALCULO CON IMU  ------------------------------------------
-
-			// printf("Datos de IMU linear acceleration - x: %f, y: %f, z: %f.\n", values[0], values[1], values[2]);
-			// printf("Datos de IMU angular velocities - x: %f, y: %f, z: %f.\n", values[3], values[4], values[5]);
-
-			DataIMU linear_acceleration = {
-				convertGToMS2(values[0]),
-				convertGToMS2(values[1]),
-				convertGToMS2(values[2])
-			};
-
-			DataIMU angular_velocities = {
-				convertDegreesToRadians(values[3]),
-				convertDegreesToRadians(values[4]),
-				convertDegreesToRadians(values[5])
-			};
-
-			yaw = calculate_yaw_imu(angular_velocities, prev_yaw, dt);
+			Position position = get_position_f_c(imu_position_estimate, wheels_position_estimate, gamma, beta);
 			prev_yaw = yaw;
-
-			position = calculate_position_imu(linear_acceleration, &prev_velocities_imu, prev_position, dt, yaw);
 			prev_position = position;
-			// ------------------------------------------------------------------------------
 
 			values_output[0] = position.x;
 			values_output[1] = position.y;
 			values_output[2] = yaw;
-			printf("Calculos realizados - x: %f, y:%f, yaw:%f.\n", values_output[0],  values_output[1],  values_output[2]);
 
-	    	// if (xQueueSend(EstimedQueue, &values_output, portMAX_DELAY) != pdPASS) {
-	    	// 	printf("ERROR: full queue.\n");
-	    	// }
+	    	if (xQueueSend(EstimedQueue, &values_output, portMAX_DELAY) != pdPASS) {
+	    		printf("ERROR: full queue.\n");
+	    	}
 		}
 	}
 }
