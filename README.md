@@ -35,7 +35,7 @@ alias get_idf='. $HOME/esp/esp-idf/export.sh'
 ```
 pip3 install catkin_pkg lark-parser colcon-common-extensions
 
-cd ~esp/esp-idf/components
+cd ~/esp/esp-idf/components
 
 git clone https://github.com/micro-ROS/micro_ros_espidf_component.git
 
