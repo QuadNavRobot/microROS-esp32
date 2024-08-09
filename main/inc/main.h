@@ -26,14 +26,8 @@
 
 // Debug definitions
 #define DEBUG_MODE 1
-#define PRINT_IMU_DEBUG 1 //Only if DEBUG_MODE = 1
-#define PRINT_ENCODERS_DEBUG 1 //Only if DEBUG_MODE = 1
-
-// SPI pins
-#define GPIO_MOSI 12  // 38 vision bonnet
-#define GPIO_SCLK 15  // 40 vision bonnet
-#define GPIO_CS 14    // 12 vision bonnet
-
+#define PRINT_IMU_DEBUG 0 //Only if DEBUG_MODE = 1
+#define PRINT_ENCODERS_DEBUG 0 //Only if DEBUG_MODE = 1
 
 // Variables
 rclc_support_t support;
@@ -60,10 +54,14 @@ int ticks_FR;
 int ticks_RR;
 int ticks_RL;
 
+float current_velocity_FL = 0.0;
+float current_velocity_FR = 0.0;
+float current_velocity_RR = 0.0;
+float current_velocity_RL = 0.0;
+
 // Functions
 void init_microROS();
 void FreeRTOS_Init();
 void TaskPublishDataSensors(void *argument);
 void TaskReadDataIMU(void *argument);
 void TaskPWM(void *argument);
-//void TaskSPI(void *argument);

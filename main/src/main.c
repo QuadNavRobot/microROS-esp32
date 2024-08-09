@@ -174,10 +174,13 @@ void TaskPublishDataSensors(void *argument){
 		}
 
 	}
-	angular_velocity.data.data[0] = ((float)encoder_pulses_FL/20)*360;
-	angular_velocity.data.data[1] = ((float)encoder_pulses_FR/20)*360;
-	angular_velocity.data.data[2] = ((float)encoder_pulses_RR/20)*360;
-	angular_velocity.data.data[3] = ((float)encoder_pulses_RL/20)*360;
+	/* TO DO: falta dividirlo por el tiempo. todas los contadores estan rotos porque se resetean
+	en calculate_current_velocity. Considerar poner los valores en una cola
+	*/
+	angular_velocity.data.data[0] = current_velocity_FL; //((float)encoder_pulses_FL/20)*360;
+	angular_velocity.data.data[1] = current_velocity_FR; //((float)encoder_pulses_FR/20)*360;
+	angular_velocity.data.data[2] = current_velocity_RR; //((float)encoder_pulses_RR/20)*360;
+	angular_velocity.data.data[3] = current_velocity_RL; //((float)encoder_pulses_RL/20)*360;
 
 	if(DEBUG_MODE){
 		if(PRINT_ENCODERS_DEBUG)
@@ -197,77 +200,24 @@ void TaskPublishDataSensors(void *argument){
 */
 void TaskPWM(void *argument){
 	
-	 PWM_config();
-	
-	//APAGADOS
-	motor_forward(CHANNEL_RR, 0);
-	motor_forward(CHANNEL_FR, 0);
-	motor_forward(CHANNEL_FL, 0);
-	motor_forward(CHANNEL_RL, 0);
-	
+	PWM_config();
+	PID_Init();
+
+	//MOTORES APAGADOS
+	set_velocity(CHANNEL_FL, 0);
+	set_velocity(CHANNEL_FR, 0);
+	set_velocity(CHANNEL_RR, 0);
+	set_velocity(CHANNEL_RL, 0);
 	for(;;){
-		//AL 50%
-		encoder_pulses_RL = 0;
-		motor_forward(CHANNEL_RR, 30);
-		motor_forward(CHANNEL_FR, 30);
-		motor_forward(CHANNEL_FL, 30);
-		motor_forward(CHANNEL_RL, 30);
-		vTaskDelay(36);
-		
-		motor_backward(CHANNEL_RR, 0);
-		motor_backward(CHANNEL_FR, 0);
-		motor_backward(CHANNEL_FL, 0);
-		motor_backward(CHANNEL_RL, 0);
-		printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
-		vTaskDelay(500);
+
+		set_velocity(CHANNEL_FL, 0.4);
+		set_velocity(CHANNEL_FR, 0.4);
+		set_velocity(CHANNEL_RR, 0.4);
+		set_velocity(CHANNEL_RL, 0.4);
+		vTaskDelay(10);
+
+		//printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
+
+		//vTaskDelay(10); //1 tick 10 ms
 	}
 }
-
-/*void TaskSPI(void *argument){
-	//Configuration for the SPI bus
-    spi_bus_config_t buscfg={
-        .mosi_io_num=GPIO_MOSI,
-        .miso_io_num=-1,
-        .sclk_io_num=GPIO_SCLK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-    };
-
-    //Configuration for the SPI slave interface
-    spi_slave_interface_config_t slvcfg={
-        .mode=0,
-        .spics_io_num=GPIO_CS,
-        .queue_size=3,
-        .flags=0
-    };
-
-	//gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLDOWN_ONLY);
-	//gpio_set_pull_mode(GPIO_MISO, GPIO_PULLDOWN_ONLY);
-    //gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLDOWN_ONLY);
-    //gpio_set_pull_mode(GPIO_CS, GPIO_PULLDOWN_ONLY);
-
-	spi_slave_initialize(HSPI_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
-
-	char recvbuf[100]="";
-
-    spi_slave_transaction_t t;
-    memset(&t, 0, sizeof(t));
-	t.length = 100 * 8;
-    t.rx_buffer = recvbuf;
-
-	while(1) {
-
-		memset(recvbuf,'\0', sizeof(recvbuf));
-
-        // Wait for data from master
-		//printf("Esperando datos\n");
-        esp_err_t ret = spi_slave_transmit(HSPI_HOST, &t, portMAX_DELAY);
-        if(ret == ESP_OK) {
-            printf("Received: %s\n", recvbuf);
-
-        } else {
-            printf("SPI slave error\n");
-        }
-		//vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}*/
