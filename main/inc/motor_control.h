@@ -18,10 +18,15 @@
 #define CHANNEL_FL (LEDC_CHANNEL_2)
 #define CHANNEL_RL (LEDC_CHANNEL_3)
 
+#define RADIUS_WHEEL 0.0325
+#define SLOTS_ENCODER 20 // ranuras de las ruedas
+
 extern float current_velocity_FL;
 extern float current_velocity_FR;
 extern float current_velocity_RR;
 extern float current_velocity_RL;
+
+extern float current_gyro_z;
 
 typedef struct{
 	float PID_n;
@@ -34,11 +39,14 @@ typedef struct{
 	float error_n_2;
 } PID;
 
+extern PID pid_yaw;
+
 void PID_Init();
 void PWM_config();
 void motor_forward(ledc_channel_t channel, uint32_t dutty_percentage);
 void motor_backward(ledc_channel_t channel, uint32_t dutty_percentage);
 uint32_t set_dutty(uint32_t dutty_percentage, ledc_channel_t channel);
-void set_velocity(ledc_channel_t channel, float velocity);
-void calculate_PID(ledc_channel_t channel, float velocity, PID *pid);
+void set_velocity(float velocity);
+void calculate_PID(float sensed_value, float set_point, PID *pid);
 float calculate_current_velocity(ledc_channel_t channel);
+float transform_angular_velocity_to_linear_velocity(float angular_velocity);

@@ -61,6 +61,12 @@ float current_velocity_FR = 0.0;
 float current_velocity_RR = 0.0;
 float current_velocity_RL = 0.0;
 
+float current_gyro_z = 0.0;
+
+PID pid_yaw;
+
+int status_init = 0;
+
 // Functions
 void init_microROS();
 void FreeRTOS_Init();

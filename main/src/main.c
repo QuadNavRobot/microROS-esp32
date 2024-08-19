@@ -91,7 +91,7 @@ void FreeRTOS_Init(){
 		NULL);
 
 	xTaskCreate(TaskPublishDataSensors,
-		"Publish IMU",
+		"Publish Data sensors",
 		2000,
 		NULL,
 		1,
@@ -103,13 +103,6 @@ void FreeRTOS_Init(){
 		NULL,
 		1,
 		NULL);
-	
-	/*xTaskCreate(TaskSPI,
-		"Task SPI Slave",
-		2048,
-		NULL,
-		tskIDLE_PRIORITY+1,
-		NULL);*/
 }
 
 /**
@@ -146,12 +139,16 @@ void TaskReadDataIMU(void *argument){
 		values[3] = gyro.gyro_x;
 		values[4] = gyro.gyro_y;
 		values[5] = gyro.gyro_z;
+
+		current_gyro_z += gyro.gyro_z * 0.1; //°
+		current_gyro_z = angle_wrap(current_gyro_z);
+		printf("Gyro: %f\n", current_gyro_z);
 		
     	if (xQueueSend(IMUQueue, &values, portMAX_DELAY) != pdPASS) {
         	printf("ERROR: full queue.\n");
     	}
 		
-		vTaskDelay(pdMS_TO_TICKS(100));
+		vTaskDelay(10);
 	}
 }
 
@@ -225,16 +222,12 @@ void TaskPWM(void *argument){
 	PID_Init();
 
 	//MOTORES APAGADOS
-	set_velocity(CHANNEL_FL, 0);
-	set_velocity(CHANNEL_FR, 0);
-	set_velocity(CHANNEL_RR, 0);
-	set_velocity(CHANNEL_RL, 0);
+	set_velocity(0);
 	for(;;){
+		if(status_init == 1){
+			set_velocity(0.4);
+		}
 
-		set_velocity(CHANNEL_FL, 0.4);
-		set_velocity(CHANNEL_FR, 0.4);
-		set_velocity(CHANNEL_RR, 0.4);
-		set_velocity(CHANNEL_RL, 0.4);
 		vTaskDelay(10);
 }
 }
@@ -242,4 +235,8 @@ void TaskPWM(void *argument){
 void comand_velocity_subscription_callback(const void * msgin){
 	printf("Recibiendo\n");
 	const std_msgs__msg__Float32MultiArray * msg = (const std_msgs__msg__Float32MultiArray *) msgin;
+	status_init = 1;
+	pid_yaw.Kp = msg->data.data[0];
+	pid_yaw.Ki = msg->data.data[1];
+	pid_yaw.Kd = msg->data.data[2];
 }
