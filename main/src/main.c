@@ -37,15 +37,13 @@ void init_microROS(){
 
 	RCCHECK(rclc_node_init_default(&esp32_node, "esp32_node", "", &support));
 
-	RCCHECK(rclc_publisher_init_default(
+	RCCHECK(rclc_publisher_init_best_effort(	// Hace el mejor esfuerzo por publicar, puede fallar
 		&publisher_encoder,
 		&esp32_node,
 		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
 		"encoders"));
 
-	//RCCHECK(rclc_node_init_default(&node_IMU, "IMU_node", "", &support));
-
-	RCCHECK(rclc_publisher_init_default(
+	RCCHECK(rclc_publisher_init_best_effort(
 		&publisher_IMU,
 		&esp32_node,
 		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
@@ -53,6 +51,24 @@ void init_microROS(){
 
 	RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
 	
+	msg_subscriptor.data.data = malloc(sizeof(float)*3);
+	msg_subscriptor.data.capacity = 3;
+	msg_subscriptor.data.size = 3; 
+
+	RCCHECK(rclc_subscription_init_best_effort(
+		&subscription_velocities,
+		&esp32_node,
+		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+		"comand_velocity"
+	));
+
+	RCCHECK(rclc_executor_add_subscription(
+		&executor,
+		&subscription_velocities,
+		&msg_subscriptor,
+		&comand_velocity_subscription_callback,
+		ON_NEW_DATA
+	));
 }
 
 
@@ -194,6 +210,8 @@ void TaskPublishDataSensors(void *argument){
 		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
 	}
 	
+	rclc_executor_spin_some(&executor,0);
+	
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
@@ -218,9 +236,10 @@ void TaskPWM(void *argument){
 		set_velocity(CHANNEL_RR, 0.4);
 		set_velocity(CHANNEL_RL, 0.4);
 		vTaskDelay(10);
+}
+}
 
-		//printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
-
-		//vTaskDelay(10); //1 tick 10 ms
-	}
+void comand_velocity_subscription_callback(const void * msgin){
+	printf("Recibiendo\n");
+	const std_msgs__msg__Float32MultiArray * msg = (const std_msgs__msg__Float32MultiArray *) msgin;
 }

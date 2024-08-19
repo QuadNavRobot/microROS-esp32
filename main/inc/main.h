@@ -38,6 +38,8 @@ rmw_init_options_t* rmw_options;
 rcl_publisher_t publisher_encoder;
 rcl_publisher_t publisher_IMU;
 rcl_node_t esp32_node;
+rcl_subscription_t subscription_velocities;
+std_msgs__msg__Float32MultiArray msg_subscriptor;
 
 mpu6050_handle_t mpu6050 = NULL;
 
@@ -65,3 +67,5 @@ void FreeRTOS_Init();
 void TaskPublishDataSensors(void *argument);
 void TaskReadDataIMU(void *argument);
 void TaskPWM(void *argument);
+
+void comand_velocity_subscription_callback(const void * msgin);
