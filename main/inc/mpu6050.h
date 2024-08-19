@@ -394,6 +394,41 @@ esp_err_t mpu6050_get_temp(mpu6050_handle_t sensor, mpu6050_temp_value_t *const 
 esp_err_t mpu6050_complimentory_filter(mpu6050_handle_t sensor, const mpu6050_acce_value_t *const acce_value,
                                        const mpu6050_gyro_value_t *const gyro_value, complimentary_angle_t *const complimentary_angle);
 
+/**
+ * @brief Calibrate mpu6050 with offset value
+ * 
+ * @param sensor object handle of mpu6050
+ * 
+ * @return
+ *     - ESP_OK Success
+ *     - ESP_FAIL Fail
+*/
+esp_err_t mpu6050_calibrate(mpu6050_handle_t sensor);
+
+/**
+ * @brief Read gyro values of the calibrated gyroscope with the offset
+ * 
+ * @param sensor object handle of mpu6050
+ * @param gyro_value gyroscope measurements
+ *
+ * @return
+ *     - ESP_OK Success
+ *     - ESP_FAIL Fail
+*/
+esp_err_t mpu6050_get_gyro_cal(mpu6050_handle_t sensor, mpu6050_gyro_value_t *const gyro_value);
+
+/**
+ * @brief Read accel values of the calibrated accelerometer with the offset
+ * 
+ * @param sensor object handle of mpu6050
+ * @param acce_value accelerometer measurements
+ *
+ * @return
+ *     - ESP_OK Success
+ *     - ESP_FAIL Fail
+*/
+esp_err_t mpu6050_get_acce_cal(mpu6050_handle_t sensor, mpu6050_acce_value_t *const acce_value);
+
 #ifdef __cplusplus
 }
 #endif

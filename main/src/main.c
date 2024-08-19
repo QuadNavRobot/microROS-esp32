@@ -111,17 +111,20 @@ void TaskReadDataIMU(void *argument){
 
     ret = mpu6050_get_deviceid(mpu6050, &mpu6050_deviceid);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
+
+	ret = mpu6050_calibrate(mpu6050);
+    TEST_ASSERT_EQUAL(ESP_OK, ret);
 	
 	while(1){
 		//printf("Stack free - READ: %d \n",uxTaskGetStackHighWaterMark(NULL));
-		ret = mpu6050_get_acce(mpu6050, &acce);
+		ret = mpu6050_get_acce_cal(mpu6050, &acce);
 		TEST_ASSERT_EQUAL(ESP_OK, ret);
 
 		values[0] = acce.acce_x;
 		values[1] = acce.acce_y;
 		values[2] = acce.acce_z;
 
-		ret = mpu6050_get_gyro(mpu6050, &gyro);
+		ret = mpu6050_get_gyro_cal(mpu6050, &gyro);
     	TEST_ASSERT_EQUAL(ESP_OK, ret);
 		
 		values[3] = gyro.gyro_x;
