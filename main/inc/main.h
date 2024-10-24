@@ -26,14 +26,8 @@
 
 // Debug definitions
 #define DEBUG_MODE 1
-#define PRINT_IMU_DEBUG 1 //Only if DEBUG_MODE = 1
-#define PRINT_ENCODERS_DEBUG 1 //Only if DEBUG_MODE = 1
-
-// SPI pins
-#define GPIO_MOSI 12  // 38 vision bonnet
-#define GPIO_SCLK 15  // 40 vision bonnet
-#define GPIO_CS 14    // 12 vision bonnet
-
+#define PRINT_IMU_DEBUG 0 //Only if DEBUG_MODE = 1
+#define PRINT_ENCODERS_DEBUG 0 //Only if DEBUG_MODE = 1
 
 // Variables
 rclc_support_t support;
@@ -44,6 +38,8 @@ rmw_init_options_t* rmw_options;
 rcl_publisher_t publisher_encoder;
 rcl_publisher_t publisher_IMU;
 rcl_node_t esp32_node;
+rcl_subscription_t subscription_velocities;
+std_msgs__msg__Float32MultiArray msg_subscriptor;
 
 mpu6050_handle_t mpu6050 = NULL;
 
@@ -60,10 +56,22 @@ int ticks_FR;
 int ticks_RR;
 int ticks_RL;
 
+float current_velocity_FL = 0.0;
+float current_velocity_FR = 0.0;
+float current_velocity_RR = 0.0;
+float current_velocity_RL = 0.0;
+
+float current_gyro_z = 0.0;
+
+PID pid_yaw;
+
+int status_init = 0;
+
 // Functions
 void init_microROS();
 void FreeRTOS_Init();
 void TaskPublishDataSensors(void *argument);
 void TaskReadDataIMU(void *argument);
 void TaskPWM(void *argument);
-//void TaskSPI(void *argument);
+
+void comand_velocity_subscription_callback(const void * msgin);

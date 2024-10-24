@@ -33,6 +33,9 @@ const uint8_t MPU6050_FIFO_OVERFLOW_INT_BIT = (uint8_t) BIT4;
 const uint8_t MPU6050_MOT_DETECT_INT_BIT =    (uint8_t) BIT6;
 const uint8_t MPU6050_ALL_INTERRUPTS = (MPU6050_DATA_RDY_INT_BIT | MPU6050_I2C_MASTER_INT_BIT | MPU6050_FIFO_OVERFLOW_INT_BIT | MPU6050_MOT_DETECT_INT_BIT);
 
+mpu6050_acce_value_t offset_acce_values = {0.0, 0.0, 0.0};
+mpu6050_gyro_value_t offset_gyro_values = {0.0, 0.0, 0.0};
+
 typedef struct {
     i2c_port_t bus;
     gpio_num_t int_pin;
@@ -471,6 +474,86 @@ esp_err_t mpu6050_complimentory_filter(mpu6050_handle_t sensor, const mpu6050_ac
 
     complimentary_angle->roll = (ALPHA * (complimentary_angle->roll + gyro_angle[0])) + ((1 - ALPHA) * acce_angle[0]);
     complimentary_angle->pitch = (ALPHA * (complimentary_angle->pitch + gyro_angle[1])) + ((1 - ALPHA) * acce_angle[1]);
+
+    return ESP_OK;
+}
+
+esp_err_t mpu6050_calibrate(mpu6050_handle_t sensor)
+{
+    esp_err_t ret;
+    int CONT = 1000;
+    mpu6050_acce_value_t temp_acce_values;
+    mpu6050_gyro_value_t temp_gyro_values;
+
+    offset_acce_values.acce_x = 0.0;
+    offset_acce_values.acce_y = 0.0;
+    offset_acce_values.acce_z = 0.0;
+    
+    offset_gyro_values.gyro_x = 0.0;
+    offset_gyro_values.gyro_y = 0.0;
+    offset_gyro_values.gyro_z = 0.0;
+
+    for (int i = 0; i < CONT; i++){
+        ret = mpu6050_get_acce(sensor, &temp_acce_values);
+        if (ret != ESP_OK)
+        {
+            return ret;
+        }
+
+        offset_acce_values.acce_x += temp_acce_values.acce_x;
+        offset_acce_values.acce_y += temp_acce_values.acce_y;
+        offset_acce_values.acce_z += temp_acce_values.acce_z;
+
+        ret = mpu6050_get_gyro(sensor, &temp_gyro_values);
+        if (ret != ESP_OK)
+        {
+            return ret;
+        }
+
+        offset_gyro_values.gyro_x += temp_gyro_values.gyro_x;
+        offset_gyro_values.gyro_y += temp_gyro_values.gyro_y;
+        offset_gyro_values.gyro_z += temp_gyro_values.gyro_z;
+    }
+    
+    offset_acce_values.acce_x = offset_acce_values.acce_x / CONT;
+    offset_acce_values.acce_y = offset_acce_values.acce_y / CONT;
+    offset_acce_values.acce_z = offset_acce_values.acce_z / CONT;
+
+    offset_gyro_values.gyro_x = offset_gyro_values.gyro_x / CONT;
+    offset_gyro_values.gyro_y = offset_gyro_values.gyro_y / CONT;
+    offset_gyro_values.gyro_z = offset_gyro_values.gyro_z / CONT;
+
+     return ESP_OK;
+}
+
+esp_err_t mpu6050_get_gyro_cal(mpu6050_handle_t sensor, mpu6050_gyro_value_t *const gyro_value)
+{
+    esp_err_t ret;
+    ret = mpu6050_get_gyro(sensor, gyro_value);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    gyro_value->gyro_x = gyro_value->gyro_x - offset_gyro_values.gyro_x;
+    gyro_value->gyro_y = gyro_value->gyro_y - offset_gyro_values.gyro_y;
+    gyro_value->gyro_z = gyro_value->gyro_z - offset_gyro_values.gyro_z;
+
+    return ESP_OK;
+}
+
+esp_err_t mpu6050_get_acce_cal(mpu6050_handle_t sensor, mpu6050_acce_value_t *const acce_value)
+{
+    esp_err_t ret;
+    ret = mpu6050_get_acce(sensor, acce_value);
+    if (ret != ESP_OK)
+    {
+        return ret;
+    }
+
+    acce_value->acce_x = acce_value->acce_x - offset_acce_values.acce_x;
+    acce_value->acce_y = acce_value->acce_y - offset_acce_values.acce_y;
+    acce_value->acce_z = acce_value->acce_z - offset_acce_values.acce_z;
 
     return ESP_OK;
 }

@@ -12,7 +12,7 @@ void init_encoder(){
 		.pin_bit_mask = ((1ULL << GPIO_ENCODER_FR) | (1ULL << GPIO_ENCODER_FL) | (1ULL << GPIO_ENCODER_RR) | (1ULL << GPIO_ENCODER_RL)),
 		.mode = GPIO_MODE_INPUT,
 		.pull_up_en = GPIO_PULLUP_DISABLE,
-		.pull_down_en = GPIO_PULLDOWN_ENABLE,
+		.pull_down_en = GPIO_PULLDOWN_DISABLE,
 		.intr_type = GPIO_INTR_POSEDGE
 	};
 
@@ -24,8 +24,6 @@ void init_encoder(){
 	gpio_isr_handler_add(GPIO_ENCODER_FL, encoder_isr_handler, (void*)GPIO_ENCODER_FL);
 	gpio_isr_handler_add(GPIO_ENCODER_RR, encoder_isr_handler, (void*)GPIO_ENCODER_RR);
 	gpio_isr_handler_add(GPIO_ENCODER_RL, encoder_isr_handler, (void*)GPIO_ENCODER_RL);
-
-    //return ESP_OK;
 }
 
 /**
@@ -35,17 +33,16 @@ void init_encoder(){
 void IRAM_ATTR encoder_isr_handler(void* arg){
 	uint32_t gpio_num = (uint32_t) arg;
 	total_ticks = xTaskGetTickCount();
-
-	if((gpio_num == GPIO_ENCODER_FL) && ((total_ticks - ticks_FL) >= 3)){
+	if((gpio_num == GPIO_ENCODER_FL) && ((total_ticks - ticks_FL) >= 1)){
 		encoder_pulses_FL++;
 		ticks_FL = total_ticks;
-	}else if((gpio_num == GPIO_ENCODER_FR) && ((total_ticks - ticks_FR) >= 3)){
+	}else if((gpio_num == GPIO_ENCODER_FR) && ((total_ticks - ticks_FR) >= 1)){
 		encoder_pulses_FR++;
 		ticks_FR = total_ticks;
-	}else if((gpio_num == GPIO_ENCODER_RR) && ((total_ticks - ticks_RR) >= 3)){
+	}else if((gpio_num == GPIO_ENCODER_RR) && ((total_ticks - ticks_RR) >= 1)){
 		encoder_pulses_RR++;
 		ticks_RR = total_ticks;
-	}else if((gpio_num == GPIO_ENCODER_RL) && ((total_ticks - ticks_RL) >= 3)){
+	}else if((gpio_num == GPIO_ENCODER_RL) && ((total_ticks - ticks_RL) >= 1)){
 		encoder_pulses_RL++;
 		ticks_RL = total_ticks;
 	}

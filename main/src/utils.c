@@ -19,3 +19,15 @@ float convertDegreesToRadians(float value) {
   // 1° = pi/180 rad
     return value * M_PI /180;
 }
+
+float angle_wrap(float degrees){
+	if (degrees > 180)
+	{
+		return degrees - 360;
+	}else if (degrees < -180)
+	{
+		return degrees + 360;
+	}
+	
+	return degrees;
+}

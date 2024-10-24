@@ -37,15 +37,13 @@ void init_microROS(){
 
 	RCCHECK(rclc_node_init_default(&esp32_node, "esp32_node", "", &support));
 
-	RCCHECK(rclc_publisher_init_default(
+	RCCHECK(rclc_publisher_init_best_effort(	// Hace el mejor esfuerzo por publicar, puede fallar
 		&publisher_encoder,
 		&esp32_node,
 		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
 		"encoders"));
 
-	//RCCHECK(rclc_node_init_default(&node_IMU, "IMU_node", "", &support));
-
-	RCCHECK(rclc_publisher_init_default(
+	RCCHECK(rclc_publisher_init_best_effort(
 		&publisher_IMU,
 		&esp32_node,
 		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
@@ -53,6 +51,24 @@ void init_microROS(){
 
 	RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
 	
+	msg_subscriptor.data.data = malloc(sizeof(float)*3);
+	msg_subscriptor.data.capacity = 3;
+	msg_subscriptor.data.size = 3; 
+
+	RCCHECK(rclc_subscription_init_best_effort(
+		&subscription_velocities,
+		&esp32_node,
+		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+		"comand_velocity"
+	));
+
+	RCCHECK(rclc_executor_add_subscription(
+		&executor,
+		&subscription_velocities,
+		&msg_subscriptor,
+		&comand_velocity_subscription_callback,
+		ON_NEW_DATA
+	));
 }
 
 
@@ -75,7 +91,7 @@ void FreeRTOS_Init(){
 		NULL);
 
 	xTaskCreate(TaskPublishDataSensors,
-		"Publish IMU",
+		"Publish Data sensors",
 		2000,
 		NULL,
 		1,
@@ -87,13 +103,6 @@ void FreeRTOS_Init(){
 		NULL,
 		1,
 		NULL);
-	
-	/*xTaskCreate(TaskSPI,
-		"Task SPI Slave",
-		2048,
-		NULL,
-		tskIDLE_PRIORITY+1,
-		NULL);*/
 }
 
 /**
@@ -111,28 +120,35 @@ void TaskReadDataIMU(void *argument){
 
     ret = mpu6050_get_deviceid(mpu6050, &mpu6050_deviceid);
     TEST_ASSERT_EQUAL(ESP_OK, ret);
+
+	ret = mpu6050_calibrate(mpu6050);
+    TEST_ASSERT_EQUAL(ESP_OK, ret);
 	
 	while(1){
 		//printf("Stack free - READ: %d \n",uxTaskGetStackHighWaterMark(NULL));
-		ret = mpu6050_get_acce(mpu6050, &acce);
+		ret = mpu6050_get_acce_cal(mpu6050, &acce);
 		TEST_ASSERT_EQUAL(ESP_OK, ret);
 
 		values[0] = acce.acce_x;
 		values[1] = acce.acce_y;
 		values[2] = acce.acce_z;
 
-		ret = mpu6050_get_gyro(mpu6050, &gyro);
+		ret = mpu6050_get_gyro_cal(mpu6050, &gyro);
     	TEST_ASSERT_EQUAL(ESP_OK, ret);
 		
 		values[3] = gyro.gyro_x;
 		values[4] = gyro.gyro_y;
 		values[5] = gyro.gyro_z;
+
+		current_gyro_z += gyro.gyro_z * 0.1; //°
+		current_gyro_z = angle_wrap(current_gyro_z);
+		printf("Gyro: %f\n", current_gyro_z);
 		
     	if (xQueueSend(IMUQueue, &values, portMAX_DELAY) != pdPASS) {
         	printf("ERROR: full queue.\n");
     	}
 		
-		vTaskDelay(pdMS_TO_TICKS(100));
+		vTaskDelay(10);
 	}
 }
 
@@ -174,10 +190,13 @@ void TaskPublishDataSensors(void *argument){
 		}
 
 	}
-	angular_velocity.data.data[0] = ((float)encoder_pulses_FL/20)*360;
-	angular_velocity.data.data[1] = ((float)encoder_pulses_FR/20)*360;
-	angular_velocity.data.data[2] = ((float)encoder_pulses_RR/20)*360;
-	angular_velocity.data.data[3] = ((float)encoder_pulses_RL/20)*360;
+	/* TO DO: falta dividirlo por el tiempo. todas los contadores estan rotos porque se resetean
+	en calculate_current_velocity. Considerar poner los valores en una cola
+	*/
+	angular_velocity.data.data[0] = current_velocity_FL; //((float)encoder_pulses_FL/20)*360;
+	angular_velocity.data.data[1] = current_velocity_FR; //((float)encoder_pulses_FR/20)*360;
+	angular_velocity.data.data[2] = current_velocity_RR; //((float)encoder_pulses_RR/20)*360;
+	angular_velocity.data.data[3] = current_velocity_RL; //((float)encoder_pulses_RL/20)*360;
 
 	if(DEBUG_MODE){
 		if(PRINT_ENCODERS_DEBUG)
@@ -188,6 +207,8 @@ void TaskPublishDataSensors(void *argument){
 		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
 	}
 	
+	rclc_executor_spin_some(&executor,0);
+	
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 }
@@ -197,77 +218,25 @@ void TaskPublishDataSensors(void *argument){
 */
 void TaskPWM(void *argument){
 	
-	 PWM_config();
-	
-	//APAGADOS
-	motor_forward(CHANNEL_RR, 0);
-	motor_forward(CHANNEL_FR, 0);
-	motor_forward(CHANNEL_FL, 0);
-	motor_forward(CHANNEL_RL, 0);
-	
+	PWM_config();
+	PID_Init();
+
+	//MOTORES APAGADOS
+	set_velocity(0);
 	for(;;){
-		//AL 50%
-		encoder_pulses_RL = 0;
-		motor_forward(CHANNEL_RR, 30);
-		motor_forward(CHANNEL_FR, 30);
-		motor_forward(CHANNEL_FL, 30);
-		motor_forward(CHANNEL_RL, 30);
-		vTaskDelay(36);
-		
-		motor_backward(CHANNEL_RR, 0);
-		motor_backward(CHANNEL_FR, 0);
-		motor_backward(CHANNEL_FL, 0);
-		motor_backward(CHANNEL_RL, 0);
-		printf("Stack free - PWM: %d \n",uxTaskGetStackHighWaterMark(NULL));
-		vTaskDelay(500);
-	}
+		if(status_init == 1){
+			set_velocity(0.4);
+		}
+
+		vTaskDelay(10);
+}
 }
 
-/*void TaskSPI(void *argument){
-	//Configuration for the SPI bus
-    spi_bus_config_t buscfg={
-        .mosi_io_num=GPIO_MOSI,
-        .miso_io_num=-1,
-        .sclk_io_num=GPIO_SCLK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-    };
-
-    //Configuration for the SPI slave interface
-    spi_slave_interface_config_t slvcfg={
-        .mode=0,
-        .spics_io_num=GPIO_CS,
-        .queue_size=3,
-        .flags=0
-    };
-
-	//gpio_set_pull_mode(GPIO_MOSI, GPIO_PULLDOWN_ONLY);
-	//gpio_set_pull_mode(GPIO_MISO, GPIO_PULLDOWN_ONLY);
-    //gpio_set_pull_mode(GPIO_SCLK, GPIO_PULLDOWN_ONLY);
-    //gpio_set_pull_mode(GPIO_CS, GPIO_PULLDOWN_ONLY);
-
-	spi_slave_initialize(HSPI_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
-
-	char recvbuf[100]="";
-
-    spi_slave_transaction_t t;
-    memset(&t, 0, sizeof(t));
-	t.length = 100 * 8;
-    t.rx_buffer = recvbuf;
-
-	while(1) {
-
-		memset(recvbuf,'\0', sizeof(recvbuf));
-
-        // Wait for data from master
-		//printf("Esperando datos\n");
-        esp_err_t ret = spi_slave_transmit(HSPI_HOST, &t, portMAX_DELAY);
-        if(ret == ESP_OK) {
-            printf("Received: %s\n", recvbuf);
-
-        } else {
-            printf("SPI slave error\n");
-        }
-		//vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}*/
+void comand_velocity_subscription_callback(const void * msgin){
+	printf("Recibiendo\n");
+	const std_msgs__msg__Float32MultiArray * msg = (const std_msgs__msg__Float32MultiArray *) msgin;
+	status_init = 1;
+	pid_yaw.Kp = msg->data.data[0];
+	pid_yaw.Ki = msg->data.data[1];
+	pid_yaw.Kd = msg->data.data[2];
+}
