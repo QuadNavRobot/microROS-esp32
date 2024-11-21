@@ -1,19 +1,14 @@
 #include "../inc/main.h"
 
 void app_main(void){
-	if (!DEBUG_MODE)
-	{
-		init_microROS();
-	}
 
+	init_microROS();
 	init_encoder();
-
 	FreeRTOS_Init();
-
 }
 
 /**
- * @brief Configure micro-ROS. Create the nodes and publishers.
+ * @brief Configure micro-ROS. Create the robot node, the odometry publisher and the velocity command subscriber
  */
 void init_microROS(){
 
@@ -36,70 +31,64 @@ void init_microROS(){
 	RCCHECK(rclc_support_init_with_options(&support, 0, NULL, &init_options, &allocator));
 
 	RCCHECK(rclc_node_init_default(&esp32_node, "esp32_node", "", &support));
-
-	RCCHECK(rclc_publisher_init_best_effort(	// Hace el mejor esfuerzo por publicar, puede fallar
+	
+	RCCHECK(rclc_publisher_init_best_effort(
 		&publisher_encoder,
 		&esp32_node,
-		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
-		"encoders"));
-
-	RCCHECK(rclc_publisher_init_best_effort(
-		&publisher_IMU,
-		&esp32_node,
-		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-		"IMU"));
+		ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
+		"odom"));
 
 	RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
 	
-	msg_subscriptor.data.data = malloc(sizeof(float)*3);
-	msg_subscriptor.data.capacity = 3;
-	msg_subscriptor.data.size = 3; 
+	geometry_msgs__msg__Twist__init(&twist_msg);
 
 	RCCHECK(rclc_subscription_init_best_effort(
 		&subscription_velocities,
 		&esp32_node,
-		ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
-		"comand_velocity"
+		ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+		"cmd_vel"
 	));
 
 	RCCHECK(rclc_executor_add_subscription(
 		&executor,
 		&subscription_velocities,
-		&msg_subscriptor,
-		&comand_velocity_subscription_callback,
+		&twist_msg,
+		&twist_callback,
 		ON_NEW_DATA
 	));
 }
 
-
 /**
- * @brief Create the tasks and queue.
+ * @brief Create the tasks and queues
  */
 void FreeRTOS_Init(){
 	
 	IMUQueue = xQueueCreate(10, sizeof(float[6]));
-	if(IMUQueue == NULL){ // Check if queue creation failed
+	if(IMUQueue == NULL){
+		printf("Error xQueueCreate function\n");
+	}
+	TwistReceivedQueue = xQueueCreate(10, sizeof(ReceivedTwist));
+	if(IMUQueue == NULL){
 		printf("Error xQueueCreate function\n");
 	}
 
-	
 	xTaskCreate(TaskReadDataIMU,
 		"Read IMU",
-		2000,
-		NULL,
-		2,
-		NULL);
-
-	xTaskCreate(TaskPublishDataSensors,
-		"Publish Data sensors",
 		2000,
 		NULL,
 		1,
 		NULL);
 
-	xTaskCreate(TaskPWM,
-		"Task PWM",
-		2100,
+	xTaskCreate(TaskPublishDataSensors,
+		"Publish data sensors",
+		3000,
+		NULL,
+		1,
+		NULL);
+
+	xTaskCreate(TaskMotorControl,
+		"Task motor control",
+		3000,
 		NULL,
 		1,
 		NULL);
@@ -125,7 +114,6 @@ void TaskReadDataIMU(void *argument){
     TEST_ASSERT_EQUAL(ESP_OK, ret);
 	
 	while(1){
-		//printf("Stack free - READ: %d \n",uxTaskGetStackHighWaterMark(NULL));
 		ret = mpu6050_get_acce_cal(mpu6050, &acce);
 		TEST_ASSERT_EQUAL(ESP_OK, ret);
 
@@ -139,104 +127,122 @@ void TaskReadDataIMU(void *argument){
 		values[3] = gyro.gyro_x;
 		values[4] = gyro.gyro_y;
 		values[5] = gyro.gyro_z;
-
-		current_gyro_z += gyro.gyro_z * 0.1; //°
+		current_gyro_z += gyro.gyro_z * SAMPLING_TIME;
 		current_gyro_z = angle_wrap(current_gyro_z);
-		printf("Gyro: %f\n", current_gyro_z);
 		
-    	if (xQueueSend(IMUQueue, &values, portMAX_DELAY) != pdPASS) {
+    	if (xQueueSend(IMUQueue, &values, portMAX_DELAY) != pdPASS){
         	printf("ERROR: full queue.\n");
     	}
 		
-		vTaskDelay(10);
+		vTaskDelay(pdMS_TO_TICKS(DELAY_TIME));
 	}
 }
 
 /**
- * @brief Task that receives the IMU data from the queue, converts it to a IMU msg 
- * and publishes it to a topic using micro-ROS
+ * @brief Task that publishes the robot's odometry from the IMU data and the encoders
  * @param argument Pointer to the task arguments (not used)
  */
 void TaskPublishDataSensors(void *argument){
-
 	float values[6];
-	sensor_msgs__msg__Imu *dataIMU = sensor_msgs__msg__Imu__create();
-    std_msgs__msg__Float32MultiArray angular_velocity;
-	std_msgs__msg__Float32MultiArray__init (&angular_velocity);
-	angular_velocity.data.data = malloc(sizeof(float)*4);
-	angular_velocity.data.capacity = 4;
-	angular_velocity.data.size = 4; 
+	EulerAngle euler;
+	Quaternion quaternion;
+	Position position;
+	uint32_t seconds, nanoseconds;
+	AngularVelocityIMU angular_velocity_IMU;
+	LinearAccelerationIMU linear_acceleration_IMU;
+	nav_msgs__msg__Odometry odom_msg;
+
+	rosidl_runtime_c__String__init(&odom_msg.header.frame_id);
+	rosidl_runtime_c__String__init(&odom_msg.child_frame_id);
 
 	while(1){
+		get_current_time(&seconds, &nanoseconds);
 
-    if(xQueueReceive(IMUQueue, values, portMAX_DELAY) == pdTRUE){ //Get the data from the queue
-		dataIMU->linear_acceleration.x = convertGToMS2(values[0]);
-		dataIMU->linear_acceleration.y = convertGToMS2(values[1]);
-		dataIMU->linear_acceleration.z = convertGToMS2(values[2]);
-
-		dataIMU->angular_velocity.x = convertDegreesToRadians(values[3]);
-		dataIMU->angular_velocity.y = convertDegreesToRadians(values[4]);
-		dataIMU->angular_velocity.z = convertDegreesToRadians(values[5]);
-
-		if (DEBUG_MODE)
-		{
-			if (PRINT_IMU_DEBUG)
-			{
-				printf("DataIMU Accelerometer - x: %f, y: %f, z:%f.\n", dataIMU->linear_acceleration.x, dataIMU->linear_acceleration.y, dataIMU->linear_acceleration.z);
-				printf("DataIMU Gyroscope - x: %f, y: %f, z:%f.\n", dataIMU->angular_velocity.x, dataIMU->angular_velocity.y, dataIMU->angular_velocity.z);
-			}
-		}else{
-			RCSOFTCHECK(rcl_publish(&publisher_IMU, dataIMU, NULL));
+		if(xQueueReceive(IMUQueue, values, portMAX_DELAY) == pdTRUE){ //Get data from the queue
+			linear_acceleration_IMU.x = convertGToMS2(values[0]);
+			linear_acceleration_IMU.y = convertGToMS2(values[1]);
+			linear_acceleration_IMU.z = convertGToMS2(values[2]);
+			angular_velocity_IMU.x = convertDegreesToRadians(values[3]);
+			angular_velocity_IMU.y = convertDegreesToRadians(values[4]);
+			angular_velocity_IMU.z = convertDegreesToRadians(values[5]);
+			euler.pitch = 0.0;
+			euler.roll = 0.0;
+			euler.yaw += angular_velocity_IMU.z * SAMPLING_TIME; 
+			quaternion = euler_to_quaternion(euler);
 		}
 
-	}
-	/* TO DO: falta dividirlo por el tiempo. todas los contadores estan rotos porque se resetean
-	en calculate_current_velocity. Considerar poner los valores en una cola
-	*/
-	angular_velocity.data.data[0] = current_velocity_FL; //((float)encoder_pulses_FL/20)*360;
-	angular_velocity.data.data[1] = current_velocity_FR; //((float)encoder_pulses_FR/20)*360;
-	angular_velocity.data.data[2] = current_velocity_RR; //((float)encoder_pulses_RR/20)*360;
-	angular_velocity.data.data[3] = current_velocity_RL; //((float)encoder_pulses_RL/20)*360;
+		memset(&odom_msg, 0, sizeof(nav_msgs__msg__Odometry));
+		odom_msg.header.stamp.sec = seconds;
+		odom_msg.header.stamp.nanosec = nanoseconds;
+		rosidl_runtime_c__String__assign(&odom_msg.header.frame_id, "odom");
+		rosidl_runtime_c__String__assign(&odom_msg.child_frame_id, "base_link");
+		position.x += current_velocity_total * SAMPLING_TIME * cos(euler.yaw); // se calcula cada vez que se llama a set_angular_velocity en TaskMotorControl 
+		position.y += current_velocity_total * SAMPLING_TIME * sin(euler.yaw);
+		position.z = 0.0;
+		odom_msg.pose.pose.position.x = position.x;
+		odom_msg.pose.pose.position.y = position.y;
+		odom_msg.pose.pose.position.z = position.z;
+		odom_msg.pose.pose.orientation.x = quaternion.x;
+		odom_msg.pose.pose.orientation.y = quaternion.y;
+		odom_msg.pose.pose.orientation.z = quaternion.z;
+		odom_msg.pose.pose.orientation.w = quaternion.w;
+		odom_msg.twist.twist.linear.x = current_velocity_total * cos(euler.yaw);
+		odom_msg.twist.twist.linear.y = current_velocity_total * sin(euler.yaw);
+		odom_msg.twist.twist.linear.z = 0.0;
+		odom_msg.twist.twist.angular.x = 0.0;
+		odom_msg.twist.twist.angular.y = 0.0;
+		odom_msg.twist.twist.angular.z = angular_velocity_IMU.z;
+		memset(&odom_msg.pose.covariance, 0, sizeof(odom_msg.pose.covariance));
+		memset(&odom_msg.twist.covariance, 0, sizeof(odom_msg.twist.covariance));
 
-	if(DEBUG_MODE){
-		if(PRINT_ENCODERS_DEBUG)
-		{	
-			printf("DataEncoders - Left front: %f, Left rear: %f, Right front: %f, Right rear: %f.\n", angular_velocity.data.data[0], angular_velocity.data.data[1], angular_velocity.data.data[2], angular_velocity.data.data[3]);
-		}
-	}else {
-		RCSOFTCHECK(rcl_publish(&publisher_encoder, &angular_velocity, NULL));
-	}
-	
-	rclc_executor_spin_some(&executor,0);
-	
-		vTaskDelay(pdMS_TO_TICKS(100));
+		RCSOFTCHECK(rcl_publish(&publisher_encoder, &odom_msg, NULL));
+		rclc_executor_spin_some(&executor,0);
+		vTaskDelay(pdMS_TO_TICKS(DELAY_TIME));
 	}
 }
 
 /**
- * Task to manage the operation of the engines
+ * @brief Task to control the speed of the engines from the twist received 
+ * @param argument Pointer to the task arguments (not used)
 */
-void TaskPWM(void *argument){
+void TaskMotorControl(void *argument){
+	ReceivedTwist twist;
+	AngularVelocityWheels angular_velocity_wheels;
 	
 	PWM_config();
 	PID_Init();
-
-	//MOTORES APAGADOS
-	set_velocity(0);
+	
 	for(;;){
-		if(status_init == 1){
-			set_velocity(0.4);
+		if(xQueueReceive(TwistReceivedQueue, &twist, 0) == pdTRUE){
+			angular_velocity_wheels = convertTwistToAngularVelocity(twist);
 		}
-
-		vTaskDelay(10);
+		set_angular_velocity(angular_velocity_wheels);	
+		vTaskDelay(pdMS_TO_TICKS(DELAY_TIME));
+	}
 }
+
+/**
+ * @brief Callback function that receives the twist message from the nav2
+ */
+void twist_callback(const void * msgin){
+	ReceivedTwist twist;
+	const geometry_msgs__msg__Twist * msg = (const geometry_msgs__msg__Twist *)msgin;
+	twist.v_x = msg->linear.x;
+	twist.w_z = msg->angular.z;
+
+	if (xQueueSend(TwistReceivedQueue, &twist, 0) != pdPASS){
+       	printf("ERROR: full queue.\n");
+    }
 }
 
-void comand_velocity_subscription_callback(const void * msgin){
-	printf("Recibiendo\n");
-	const std_msgs__msg__Float32MultiArray * msg = (const std_msgs__msg__Float32MultiArray *) msgin;
-	status_init = 1;
-	pid_yaw.Kp = msg->data.data[0];
-	pid_yaw.Ki = msg->data.data[1];
-	pid_yaw.Kd = msg->data.data[2];
+/**
+ * @brief Convert the twist message to angular velocity
+ * @param twist 
+ * @return AngularVelocityWheels 
+ */
+AngularVelocityWheels convertTwistToAngularVelocity(ReceivedTwist twist){
+	AngularVelocityWheels angular_velocity_wheels;
+	angular_velocity_wheels.w_l = (twist.v_x - twist.w_z * WHEEL_SEPARATION / 2) / RADIUS_WHEEL;
+	angular_velocity_wheels.w_r = (twist.v_x + twist.w_z * WHEEL_SEPARATION / 2) / RADIUS_WHEEL;
+	return angular_velocity_wheels;
 }

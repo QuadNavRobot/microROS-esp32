@@ -1,5 +1,6 @@
 #include "driver/ledc.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "math.h"
 #include "sensors.h"
 
@@ -19,34 +20,42 @@
 #define CHANNEL_RL (LEDC_CHANNEL_3)
 
 #define RADIUS_WHEEL 0.0325
-#define SLOTS_ENCODER 20 // ranuras de las ruedas
-
-extern float current_velocity_FL;
-extern float current_velocity_FR;
-extern float current_velocity_RR;
-extern float current_velocity_RL;
-
-extern float current_gyro_z;
+#define WHEEL_SEPARATION 0.1 // 10 cm
+#define SLOTS_ENCODER 20 // Ranuras de cada encoder
+#define SAMPLING_TIME 0.1 // In seconds
 
 typedef struct{
 	float PID_n;
-	float PID_n_1;
 	float Kp;
 	float Ki;
 	float Kd;
 	float error_n;
 	float error_n_1;
-	float error_n_2;
+	float P_term;
+	float I_term;
+	float D_term;
 } PID;
 
-extern PID pid_yaw;
+typedef struct{
+	__uint8_t w_FL, w_FR, w_RR, w_RL;
+}DirectionOfRotation;
+
+typedef struct{
+  float w_l, w_r;
+}AngularVelocityWheels;
+
+typedef struct{
+  float w_FL, w_FR, w_RR, w_RL;
+}CurrentAngularVelocityWheels;
+
+extern CurrentAngularVelocityWheels current_angular_velocity_wheels;
+extern float current_velocity_total;
 
 void PID_Init();
 void PWM_config();
 void motor_forward(ledc_channel_t channel, uint32_t dutty_percentage);
 void motor_backward(ledc_channel_t channel, uint32_t dutty_percentage);
 uint32_t set_dutty(uint32_t dutty_percentage, ledc_channel_t channel);
-void set_velocity(float velocity);
+void set_angular_velocity(AngularVelocityWheels angular_velocity_wheels);
 void calculate_PID(float sensed_value, float set_point, PID *pid);
-float calculate_current_velocity(ledc_channel_t channel);
-float transform_angular_velocity_to_linear_velocity(float angular_velocity);
+void calculate_current_angular_velocity();

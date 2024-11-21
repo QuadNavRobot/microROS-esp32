@@ -5,11 +5,13 @@ PID pid_FR;
 PID pid_FL;
 PID pid_RL;
 
-float Ts = 0.1; //100 ms
+float current_velocity_total = 0;
+DirectionOfRotation directionOfRotation;
+CurrentAngularVelocityWheels current_angular_velocity_wheels;
 
 /**
- * PWM settings for motors
-*/
+ * @brief Configures the PWM for the motors
+ */
 void PWM_config(){
 	ledc_channel_config_t ledc_channel[4];
 	
@@ -53,51 +55,55 @@ void PWM_config(){
 	}
 }
 
+/**
+ * @brief Initializes the PID controllers and sets the 
+ * directions of rotation of the wheels forward
+ */
 void PID_Init(){
 	pid_FL.PID_n = 0;
-	pid_FL.PID_n_1 = 0;
-	pid_FL.Kp = 100; //30
-	pid_FL.Ki = 60;  //5
-	pid_FL.Kd = 1;  //0
+	pid_FL.Kp = 2;
+	pid_FL.Ki = 10;
+	pid_FL.Kd = 0.2;
 	pid_FL.error_n = 0;
 	pid_FL.error_n_1 = 0;
-	pid_FL.error_n_2 = 0;
+	pid_FL.P_term = 0;
+	pid_FL.I_term = 0;
+	pid_FL.D_term = 0;
 
 	pid_FR.PID_n = 0;
-	pid_FR.PID_n_1 = 0;
-	pid_FR.Kp = 100; //180
-	pid_FR.Ki = 60; //100
-	pid_FR.Kd = 1;   //5
+	pid_FR.Kp = 2;
+	pid_FR.Ki = 8;
+	pid_FR.Kd = 0.2;
 	pid_FR.error_n = 0;
 	pid_FR.error_n_1 = 0;
-	pid_FR.error_n_2 = 0;
+	pid_FR.P_term = 0;
+	pid_FR.I_term = 0;
+	pid_FR.D_term = 0;
 
 	pid_RR.PID_n = 0;
-	pid_RR.PID_n_1 = 0;
-	pid_RR.Kp = 100; //80
-	pid_RR.Ki = 60;  //4
-	pid_RR.Kd = 1;  //2
+	pid_RR.Kp = 2;
+	pid_RR.Ki = 8;
+	pid_RR.Kd = 0.2;
 	pid_RR.error_n = 0;
 	pid_RR.error_n_1 = 0;
-	pid_RR.error_n_2 = 0;
+	pid_RR.P_term = 0;
+	pid_RR.I_term = 0;
+	pid_RR.D_term = 0;
 
 	pid_RL.PID_n = 0;
-	pid_RL.PID_n_1 = 0;
-	pid_RL.Kp = 100; //50
-	pid_RL.Ki = 60; //10
-	pid_RL.Kd = 1;
+	pid_RL.Kp = 2;
+	pid_RL.Ki = 8;
+	pid_RL.Kd = 0.2;
 	pid_RL.error_n = 0;
 	pid_RL.error_n_1 = 0;
-	pid_RL.error_n_2 = 0;
+	pid_RL.P_term = 0;
+	pid_RL.I_term = 0;
+	pid_RL.D_term = 0;
 
-	pid_yaw.PID_n = 0;
-	pid_yaw.PID_n_1 = 0;
-	pid_yaw.Kp = 100; //50
-	pid_yaw.Ki = 60; //10
-	pid_yaw.Kd = 1;
-	pid_yaw.error_n = 0;
-	pid_yaw.error_n_1 = 0;
-	pid_yaw.error_n_2 = 0;
+	directionOfRotation.w_FL = 0;
+	directionOfRotation.w_FR = 0;
+	directionOfRotation.w_RL = 0;
+	directionOfRotation.w_RR = 0;
 }
 
 /**
@@ -137,7 +143,7 @@ void motor_backward(ledc_channel_t channel, uint32_t dutty_percentage){
 }
 
 uint32_t set_dutty(uint32_t dutty_percentage, ledc_channel_t channel){
-	if(channel == CHANNEL_RR || channel == CHANNEL_FR){
+	if(channel == CHANNEL_RR || channel == CHANNEL_FR || channel == CHANNEL_FL){
 		return (uint32_t) pow(2, LEDC_TIMER_7_BIT) * (100 - dutty_percentage)/100;
 	}else{
 		return (uint32_t) pow(2, LEDC_TIMER_7_BIT) * dutty_percentage/100;
@@ -145,80 +151,73 @@ uint32_t set_dutty(uint32_t dutty_percentage, ledc_channel_t channel){
 }
 
 /**
- * 
-*/
-void set_velocity(float velocity){
-
-	calculate_PID(current_gyro_z, 0, &pid_yaw);
-	float  angular_velocity_correction = pid_yaw.PID_n;
-	
-	float corrected_velocity_left = velocity - transform_angular_velocity_to_linear_velocity(angular_velocity_correction);
-	float corrected_velocity_right = velocity + transform_angular_velocity_to_linear_velocity(angular_velocity_correction);
-
-	calculate_PID(calculate_current_velocity(CHANNEL_FL), corrected_velocity_left, &pid_FL);
-	calculate_PID(calculate_current_velocity(CHANNEL_FR), corrected_velocity_right, &pid_FR);
-	calculate_PID(calculate_current_velocity(CHANNEL_RR), corrected_velocity_right, &pid_RR);
-	calculate_PID(calculate_current_velocity(CHANNEL_RL), corrected_velocity_left, &pid_RL);
-
-	if (corrected_velocity_left < 0){
-		motor_backward(CHANNEL_RL, pid_RL.PID_n);
+ * @brief Sets the angular velocity of each wheel
+ */
+void set_angular_velocity(AngularVelocityWheels angular_velocity_wheels){
+	calculate_current_angular_velocity();
+	calculate_PID(current_angular_velocity_wheels.w_FL, angular_velocity_wheels.w_l, &pid_FL);
+	calculate_PID(current_angular_velocity_wheels.w_RL, angular_velocity_wheels.w_l, &pid_RL);
+	calculate_PID(current_angular_velocity_wheels.w_FR, angular_velocity_wheels.w_r, &pid_FR);
+	calculate_PID(current_angular_velocity_wheels.w_RR, angular_velocity_wheels.w_r, &pid_RR);
+	if(angular_velocity_wheels.w_l < 0){	
 		motor_backward(CHANNEL_FL, pid_FL.PID_n);
-			}else{
-		motor_forward(CHANNEL_RL, pid_RL.PID_n);
+		motor_backward(CHANNEL_RL, pid_RL.PID_n);
+		directionOfRotation.w_FL = 1;
+		directionOfRotation.w_RL = 1;
+	}else{
 		motor_forward(CHANNEL_FL, pid_FL.PID_n);
+		motor_forward(CHANNEL_RL, pid_RL.PID_n);
+		directionOfRotation.w_FL = 0;
+		directionOfRotation.w_RL = 0;
 	}
-	
-	if (corrected_velocity_right < 0){
-		motor_backward(CHANNEL_RR, pid_RR.PID_n);
+	if(angular_velocity_wheels.w_r < 0){
 		motor_backward(CHANNEL_FR, pid_FR.PID_n);
-			}else{
-		motor_forward(CHANNEL_RR, pid_RR.PID_n);
+		motor_backward(CHANNEL_RR, pid_RR.PID_n);
+		directionOfRotation.w_FR = 1;
+		directionOfRotation.w_RR = 1;
+	}else{
 		motor_forward(CHANNEL_FR, pid_FR.PID_n);
+		motor_forward(CHANNEL_RR, pid_RR.PID_n);
+		directionOfRotation.w_FR = 0;
+		directionOfRotation.w_RR = 0;
 	}
 }
 
+/**
+ * @brief Calculate the PID control
+ */
 void calculate_PID(float sensed_value, float set_point, PID *pid){
+	if(set_point < 0){
+		set_point = -set_point; // La rueda debe girar hacia atras
+	}
+	if(sensed_value < 0){
+		sensed_value = -sensed_value;
+	}
 	pid->error_n = set_point - sensed_value;
-	pid->PID_n = pid->PID_n_1 + (pid->Kp+(pid->Kd/Ts))*pid->error_n + (-pid->Kp+pid->Ki*Ts-(2*pid->Kd)/Ts)*pid->error_n_1 + (pid->Kd/Ts)*pid->error_n_2;
-	if(pid->PID_n < -100){
-		pid->PID_n = -100;
+	pid->P_term = pid->Kp * pid->error_n;
+	pid->I_term += pid->Ki * pid->error_n * SAMPLING_TIME;
+	pid->D_term = pid->Kd * (pid->error_n - pid->error_n_1) / SAMPLING_TIME;
+	pid->PID_n = pid->P_term + pid->I_term + pid->D_term;
+	pid->error_n_1 = pid->error_n;
+	if(pid->PID_n < 0){
+		pid->PID_n = 0;
 	}else if(pid->PID_n > 100){
 		pid->PID_n = 100;
 	}
-	// printf("PID: %f\n",pid->PID_n);
-	pid->PID_n_1 = pid->PID_n;
-	pid->error_n_2 = pid->error_n_1;
-	pid->error_n_1 = pid->error_n;
 }
 
-float calculate_current_velocity(ledc_channel_t channel){
-	if(channel == CHANNEL_RR){
-		current_velocity_RR = (2*M_PI*RADIUS_WHEEL*encoder_pulses_RR)/(SLOTS_ENCODER*Ts);
-		// printf("velocidad RR: %f\n",current_velocity_RR);
-		//printf("Pulsos RR: %d\n",encoder_pulses_RR);
-		encoder_pulses_RR = 0;
-		return current_velocity_RR;
-	}else if(channel == CHANNEL_FR){
-		current_velocity_FR = (2*M_PI*RADIUS_WHEEL*encoder_pulses_FR)/(SLOTS_ENCODER*Ts);
-		// printf("velocidad FR: %f\n",current_velocity_FR);
-		//printf("Pulsos FR: %d\n",encoder_pulses_FR);
-		encoder_pulses_FR = 0;
-		return current_velocity_FR;
-	}else if(channel == CHANNEL_FL){
-		current_velocity_FL = (2*M_PI*RADIUS_WHEEL*encoder_pulses_FL)/(SLOTS_ENCODER*Ts);
-		// printf("velocidad FL: %f\n",current_velocity_FL);
-		//printf("Pulsos FL: %d\n",encoder_pulses_FL);
-		encoder_pulses_FL = 0;
-		return current_velocity_FL;
-	}else{ // CHANNEL_RL
-		current_velocity_RL = (2*M_PI*RADIUS_WHEEL*encoder_pulses_RL)/(SLOTS_ENCODER*Ts);
-		// printf("velocidad RL: %f\n",current_velocity_RL);
-		//printf("Pulsos RL: %d\n",encoder_pulses_RL);
-		encoder_pulses_RL = 0;
-		return current_velocity_RL;
-	}
-}
-
-float transform_angular_velocity_to_linear_velocity(float angular_velocity){
-	return RADIUS_WHEEL*angular_velocity;
+/**
+ * @brief Calculates the angular velocity of each wheel and the linear velocity of the robot
+ */
+void calculate_current_angular_velocity(){
+	current_angular_velocity_wheels.w_RR = (directionOfRotation.w_RR == 0) ? ((2*M_PI*encoder_pulses_RR)/(SLOTS_ENCODER*SAMPLING_TIME)) : (-(2*M_PI*encoder_pulses_RR)/(SLOTS_ENCODER*SAMPLING_TIME));
+	current_angular_velocity_wheels.w_FR = (directionOfRotation.w_FR == 0) ? ((2*M_PI*encoder_pulses_FR)/(SLOTS_ENCODER*SAMPLING_TIME)) : (-(2*M_PI*encoder_pulses_FR)/(SLOTS_ENCODER*SAMPLING_TIME));
+	current_angular_velocity_wheels.w_FL = (directionOfRotation.w_FL == 0) ? ((2*M_PI*encoder_pulses_FL)/(SLOTS_ENCODER*SAMPLING_TIME)) : (-(2*M_PI*encoder_pulses_FL)/(SLOTS_ENCODER*SAMPLING_TIME));
+	current_angular_velocity_wheels.w_RL = (directionOfRotation.w_RL == 0) ? ((2*M_PI*encoder_pulses_RL)/(SLOTS_ENCODER*SAMPLING_TIME)) : (-(2*M_PI*encoder_pulses_RL)/(SLOTS_ENCODER*SAMPLING_TIME));
+	
+	current_velocity_total = RADIUS_WHEEL * (current_angular_velocity_wheels.w_RR + current_angular_velocity_wheels.w_FR + current_angular_velocity_wheels.w_FL + current_angular_velocity_wheels.w_RL) / 4;
+	encoder_pulses_FR = 0;
+	encoder_pulses_RR = 0;
+	encoder_pulses_FL = 0;
+	encoder_pulses_RL = 0;
 }
