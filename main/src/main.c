@@ -229,6 +229,9 @@ void twist_callback(const void * msgin){
 	const geometry_msgs__msg__Twist * msg = (const geometry_msgs__msg__Twist *)msgin;
 	twist.v_x = msg->linear.x;
 	twist.w_z = msg->angular.z;
+	if(twist.w_z > -2.5 && twist.w_z < 2.5){
+		twist.w_z = msg->angular.z * 2.5;
+	}
 
 	if (xQueueSend(TwistReceivedQueue, &twist, 0) != pdPASS){
        	printf("ERROR: full queue.\n");

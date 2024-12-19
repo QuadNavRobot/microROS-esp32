@@ -61,7 +61,7 @@ void PWM_config(){
  */
 void PID_Init(){
 	pid_FL.PID_n = 0;
-	pid_FL.Kp = 2;
+	pid_FL.Kp = 4;  //2
 	pid_FL.Ki = 10;
 	pid_FL.Kd = 0.2;
 	pid_FL.error_n = 0;
@@ -71,7 +71,7 @@ void PID_Init(){
 	pid_FL.D_term = 0;
 
 	pid_FR.PID_n = 0;
-	pid_FR.Kp = 2;
+	pid_FR.Kp = 4;
 	pid_FR.Ki = 8;
 	pid_FR.Kd = 0.2;
 	pid_FR.error_n = 0;
@@ -81,7 +81,7 @@ void PID_Init(){
 	pid_FR.D_term = 0;
 
 	pid_RR.PID_n = 0;
-	pid_RR.Kp = 2;
+	pid_RR.Kp = 4;
 	pid_RR.Ki = 8;
 	pid_RR.Kd = 0.2;
 	pid_RR.error_n = 0;
@@ -91,7 +91,7 @@ void PID_Init(){
 	pid_RR.D_term = 0;
 
 	pid_RL.PID_n = 0;
-	pid_RL.Kp = 2;
+	pid_RL.Kp = 6;
 	pid_RL.Ki = 8;
 	pid_RL.Kd = 0.2;
 	pid_RL.error_n = 0;
