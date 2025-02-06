@@ -2,8 +2,11 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <rcl/error_handling.h>
-#include <nav_msgs/msg/odometry.h>
+#include <sensor_msgs/msg/imu.h>
+//#include <nav_msgs/msg/odometry.h>
+#include <geometry_msgs/msg/twist_with_covariance_stamped.h>
 #include <geometry_msgs/msg/twist.h>
+#include <builtin_interfaces/msg/time.h>
 #include <rosidl_runtime_c/string_functions.h>
 #include <uros_network_interfaces.h>
 #include "esp_system.h"
@@ -35,6 +38,8 @@ rcl_publisher_t publisher_encoder;
 rcl_publisher_t publisher_IMU;
 rcl_node_t esp32_node;
 rcl_subscription_t subscription_velocities;
+rcl_subscription_t sub_unix_time;
+builtin_interfaces__msg__Time received_time;
 
 mpu6050_handle_t mpu6050 = NULL;
 
@@ -72,6 +77,8 @@ typedef struct{
 
 geometry_msgs__msg__Twist twist_msg;
 
+uint32_t seconds, nanoseconds;
+
 // Functions
 void init_microROS();
 void FreeRTOS_Init();
@@ -79,4 +86,5 @@ void TaskReadDataIMU(void *argument);
 void TaskMotorControl(void *argument);
 void TaskPublishDataSensors(void *argument);
 void twist_callback(const void * msgin);
+void unix_time_callback(const void * msgin);
 AngularVelocityWheels convertTwistToAngularVelocity(ReceivedTwist twist);

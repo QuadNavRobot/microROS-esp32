@@ -14,4 +14,3 @@ float convertDegreesToRadians(float value);
 float angle_wrap(float degrees);
 float angle_wrap_radians(float radians);
 Quaternion euler_to_quaternion(EulerAngle e);
-void get_current_time(uint32_t *seconds, uint32_t *nanoseconds);

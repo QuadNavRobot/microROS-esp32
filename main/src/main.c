@@ -33,12 +33,18 @@ void init_microROS(){
 	RCCHECK(rclc_node_init_default(&esp32_node, "esp32_node", "", &support));
 	
 	RCCHECK(rclc_publisher_init_best_effort(
+		&publisher_IMU,
+		&esp32_node,
+		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
+		"IMU"));
+
+	RCCHECK(rclc_publisher_init_best_effort(
 		&publisher_encoder,
 		&esp32_node,
-		ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
-		"odom"));
+		ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, TwistWithCovarianceStamped),
+		"encoders"));
 
-	RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
+	RCCHECK(rclc_executor_init(&executor, &support.context, 4, &allocator));
 	
 	geometry_msgs__msg__Twist__init(&twist_msg);
 
@@ -54,6 +60,24 @@ void init_microROS(){
 		&subscription_velocities,
 		&twist_msg,
 		&twist_callback,
+		ON_NEW_DATA
+	));
+
+
+	RCCHECK(rclc_subscription_init_best_effort(
+		&sub_unix_time,
+		&esp32_node,
+		ROSIDL_GET_MSG_TYPE_SUPPORT(builtin_interfaces, msg, Time),
+		"unix_time"
+	));
+
+	builtin_interfaces__msg__Time__init(&received_time);
+	
+	RCCHECK(rclc_executor_add_subscription(
+		&executor,
+		&sub_unix_time,
+		&received_time,
+		&unix_time_callback,
 		ON_NEW_DATA
 	));
 }
@@ -144,58 +168,53 @@ void TaskReadDataIMU(void *argument){
  */
 void TaskPublishDataSensors(void *argument){
 	float values[6];
-	EulerAngle euler;
-	Quaternion quaternion;
 	Position position;
-	uint32_t seconds, nanoseconds;
-	AngularVelocityIMU angular_velocity_IMU;
-	LinearAccelerationIMU linear_acceleration_IMU;
-	nav_msgs__msg__Odometry odom_msg;
+	
+	sensor_msgs__msg__Imu *dataIMU = sensor_msgs__msg__Imu__create();
+	geometry_msgs__msg__TwistWithCovarianceStamped dataEncoders;
 
-	rosidl_runtime_c__String__init(&odom_msg.header.frame_id);
-	rosidl_runtime_c__String__init(&odom_msg.child_frame_id);
+	rosidl_runtime_c__String__init(&dataIMU->header.frame_id);
+	rosidl_runtime_c__String__init(&dataEncoders.header.frame_id);
+	 memset(&dataEncoders, 0, sizeof(geometry_msgs__msg__TwistWithCovarianceStamped));
 
 	while(1){
-		get_current_time(&seconds, &nanoseconds);
 
 		if(xQueueReceive(IMUQueue, values, portMAX_DELAY) == pdTRUE){ //Get data from the queue
-			linear_acceleration_IMU.x = convertGToMS2(values[0]);
-			linear_acceleration_IMU.y = convertGToMS2(values[1]);
-			linear_acceleration_IMU.z = convertGToMS2(values[2]);
-			angular_velocity_IMU.x = convertDegreesToRadians(values[3]);
-			angular_velocity_IMU.y = convertDegreesToRadians(values[4]);
-			angular_velocity_IMU.z = convertDegreesToRadians(values[5]);
-			euler.pitch = 0.0;
-			euler.roll = 0.0;
-			euler.yaw += angular_velocity_IMU.z * SAMPLING_TIME; 
-			quaternion = euler_to_quaternion(euler);
+			dataIMU->linear_acceleration.x = convertGToMS2(values[0]);
+			dataIMU->linear_acceleration.y = convertGToMS2(values[1]);
+			dataIMU->linear_acceleration.z = convertGToMS2(values[2]);
+			dataIMU->angular_velocity.x = convertDegreesToRadians(values[3]);
+			dataIMU->angular_velocity.y = convertDegreesToRadians(values[4]);
+			dataIMU->angular_velocity.z = convertDegreesToRadians(values[5]);
 		}
 
-		memset(&odom_msg, 0, sizeof(nav_msgs__msg__Odometry));
-		odom_msg.header.stamp.sec = seconds;
-		odom_msg.header.stamp.nanosec = nanoseconds;
-		rosidl_runtime_c__String__assign(&odom_msg.header.frame_id, "odom");
-		rosidl_runtime_c__String__assign(&odom_msg.child_frame_id, "base_link");
-		position.x += current_velocity_total * SAMPLING_TIME * cos(euler.yaw); // se calcula cada vez que se llama a set_angular_velocity en TaskMotorControl 
-		position.y += current_velocity_total * SAMPLING_TIME * sin(euler.yaw);
-		position.z = 0.0;
-		odom_msg.pose.pose.position.x = position.x;
-		odom_msg.pose.pose.position.y = position.y;
-		odom_msg.pose.pose.position.z = position.z;
-		odom_msg.pose.pose.orientation.x = quaternion.x;
-		odom_msg.pose.pose.orientation.y = quaternion.y;
-		odom_msg.pose.pose.orientation.z = quaternion.z;
-		odom_msg.pose.pose.orientation.w = quaternion.w;
-		odom_msg.twist.twist.linear.x = current_velocity_total * cos(euler.yaw);
-		odom_msg.twist.twist.linear.y = current_velocity_total * sin(euler.yaw);
-		odom_msg.twist.twist.linear.z = 0.0;
-		odom_msg.twist.twist.angular.x = 0.0;
-		odom_msg.twist.twist.angular.y = 0.0;
-		odom_msg.twist.twist.angular.z = angular_velocity_IMU.z;
-		memset(&odom_msg.pose.covariance, 0, sizeof(odom_msg.pose.covariance));
-		memset(&odom_msg.twist.covariance, 0, sizeof(odom_msg.twist.covariance));
+		dataIMU->header.stamp.sec = seconds;
+		dataIMU->header.stamp.nanosec = nanoseconds;
+		rosidl_runtime_c__String__assign(&dataIMU->header.frame_id, "base_link");
+		double orientation_covariance[9] = {-1, 0, 0, 0, -1, 0, 0, 0, -1};
+		memcpy(dataIMU->orientation_covariance, orientation_covariance, sizeof(orientation_covariance));
+		double angular_velocity_covariance [9] = {0.005, 0, 0, 0, 0.005, 0, 0, 0, 0.005};		
+		memcpy(dataIMU->angular_velocity_covariance, angular_velocity_covariance, sizeof(angular_velocity_covariance));
+		double linear_acceleration_covariance [9] = {10, 0, 0, 0, 10, 0, 0, 0, 10};
+		memcpy(dataIMU->linear_acceleration_covariance, linear_acceleration_covariance, sizeof(linear_acceleration_covariance));
 
-		RCSOFTCHECK(rcl_publish(&publisher_encoder, &odom_msg, NULL));
+		dataEncoders.header.stamp.sec = seconds;
+		dataEncoders.header.stamp.nanosec = nanoseconds;
+		double twist_covariance[36] = {0.001, 0, 0, 0, 0, 0,  // v_x
+									   0, 0.001, 0, 0, 0, 0,	 // v_y
+									   0, 0, 0.001, 0, 0, 0,	 // v_z
+									   0, 0, 0, 0.001, 0, 0,	 // w_x
+									   0, 0, 0, 0, 0.001, 0,	 //	w_y
+									   0, 0, 0, 0, 0, 1000}; // w_z
+
+		memcpy(dataEncoders.twist.covariance, twist_covariance, sizeof(twist_covariance));
+		rosidl_runtime_c__String__assign(&dataEncoders.header.frame_id, "base_link");
+		
+		dataEncoders.twist.twist.linear.x = linear_velocity_x;
+		dataEncoders.twist.twist.angular.z = angular_velocity_z;
+
+		RCSOFTCHECK(rcl_publish(&publisher_IMU, dataIMU, NULL));
+		RCSOFTCHECK(rcl_publish(&publisher_encoder, &dataEncoders, NULL));
 		rclc_executor_spin_some(&executor,0);
 		vTaskDelay(pdMS_TO_TICKS(DELAY_TIME));
 	}
@@ -248,4 +267,11 @@ AngularVelocityWheels convertTwistToAngularVelocity(ReceivedTwist twist){
 	angular_velocity_wheels.w_l = (twist.v_x - twist.w_z * WHEEL_SEPARATION / 2) / RADIUS_WHEEL;
 	angular_velocity_wheels.w_r = (twist.v_x + twist.w_z * WHEEL_SEPARATION / 2) / RADIUS_WHEEL;
 	return angular_velocity_wheels;
+}
+
+
+void unix_time_callback(const void * msgin){
+	const builtin_interfaces__msg__Time *msg = (const builtin_interfaces__msg__Time *)msgin;
+    seconds = msg->sec;
+	nanoseconds = msg->nanosec;
 }

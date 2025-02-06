@@ -49,7 +49,8 @@ typedef struct{
 }CurrentAngularVelocityWheels;
 
 extern CurrentAngularVelocityWheels current_angular_velocity_wheels;
-extern float current_velocity_total;
+extern float linear_velocity_x;
+extern float angular_velocity_z;
 
 void PID_Init();
 void PWM_config();

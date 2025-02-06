@@ -5,7 +5,8 @@ PID pid_FR;
 PID pid_FL;
 PID pid_RL;
 
-float current_velocity_total = 0;
+float linear_velocity_x = 0;
+float angular_velocity_z = 0;
 DirectionOfRotation directionOfRotation;
 CurrentAngularVelocityWheels current_angular_velocity_wheels;
 
@@ -215,7 +216,17 @@ void calculate_current_angular_velocity(){
 	current_angular_velocity_wheels.w_FL = (directionOfRotation.w_FL == 0) ? ((2*M_PI*encoder_pulses_FL)/(SLOTS_ENCODER*SAMPLING_TIME)) : (-(2*M_PI*encoder_pulses_FL)/(SLOTS_ENCODER*SAMPLING_TIME));
 	current_angular_velocity_wheels.w_RL = (directionOfRotation.w_RL == 0) ? ((2*M_PI*encoder_pulses_RL)/(SLOTS_ENCODER*SAMPLING_TIME)) : (-(2*M_PI*encoder_pulses_RL)/(SLOTS_ENCODER*SAMPLING_TIME));
 	
-	current_velocity_total = RADIUS_WHEEL * (current_angular_velocity_wheels.w_RR + current_angular_velocity_wheels.w_FR + current_angular_velocity_wheels.w_FL + current_angular_velocity_wheels.w_RL) / 4;
+	float v_RR = RADIUS_WHEEL * current_angular_velocity_wheels.w_RR;
+	float v_FR = RADIUS_WHEEL * current_angular_velocity_wheels.w_FR;
+	float v_FL = RADIUS_WHEEL * current_angular_velocity_wheels.w_FL;
+	float v_RL = RADIUS_WHEEL * current_angular_velocity_wheels.w_RL;
+
+	float v_R = (v_RR + v_FR) / 2;
+	float v_L = (v_FL + v_RL) / 2;
+
+	linear_velocity_x = (v_R + v_L) / 2;
+	angular_velocity_z = (v_R - v_L) / WHEEL_SEPARATION;
+
 	encoder_pulses_FR = 0;
 	encoder_pulses_RR = 0;
 	encoder_pulses_FL = 0;

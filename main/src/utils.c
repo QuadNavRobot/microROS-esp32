@@ -59,12 +59,3 @@ Quaternion euler_to_quaternion(EulerAngle e){
   q.z = cr * cp * sy - sr * sp * cy;
   return q;
 }
-
-/**
- * @brief Calculate the current time
- */
-void get_current_time(uint32_t *seconds, uint32_t *nanoseconds){
-	TickType_t ticks = xTaskGetTickCount();
-	*seconds = ticks / configTICK_RATE_HZ;
-	*nanoseconds = (ticks % configTICK_RATE_HZ) * 1000000000 / configTICK_RATE_HZ;
-}
